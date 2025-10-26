@@ -1,0 +1,291 @@
+# Cypher Query Templates for MOSAR GraphRAG System
+#
+# This file contains predefined Cypher query templates for common patterns.
+# Templates use parameterization for safety and reusability.
+#
+# Template Structure:
+#   name: Unique template identifier
+#   description: Human-readable description
+#   category: Template category (traceability, component, test, design)
+#   parameters: List of required parameters
+#   cypher: Cypher query with placeholders ($param_name)
+
+templates:
+  # ==================================
+  # 1. Requirements Traceability
+  # ==================================
+
+  requirement_traceability:
+    name: "Requirement Full Traceability"
+    description: "Get complete V-Model traceability chain for a requirement"
+    category: "traceability"
+    parameters:
+      - req_id
+    cypher: |
+      MATCH (req:Requirement {id: $req_id})
+      OPTIONAL MATCH (req)<-[:VERIFIES]-(tc:TestCase)
+      OPTIONAL MATCH (req)-[:RELATES_TO]->(c:Component)
+      RETURN
+          req.id AS requirement_id,
+          req.statement AS requirement_statement,
+          req.type AS requirement_type,
+          req.level AS requirement_level,
+          req.verification AS verification_method,
+          collect(DISTINCT tc.id) AS test_cases,
+          collect(DISTINCT c.id) AS related_components
+
+  requirement_dependencies:
+    name: "Requirement Dependencies"
+    description: "Get parent and child requirements"
+    category: "traceability"
+    parameters:
+      - req_id
+    cypher: |
+      MATCH (req:Requirement {id: $req_id})
+      OPTIONAL MATCH (req)-[:DERIVES_FROM]->(parent:Requirement)
+      OPTIONAL MATCH (child:Requirement)-[:DERIVES_FROM]->(req)
+      RETURN
+          req.id AS requirement_id,
+          req.statement AS statement,
+          collect(DISTINCT parent.id) AS parent_requirements,
+          collect(DISTINCT child.id) AS child_requirements
+
+  # ==================================
+  # 2. Component Queries
+  # ==================================
+
+  component_requirements:
+    name: "Component Requirements"
+    description: "Get all requirements related to a component"
+    category: "component"
+    parameters:
+      - component_id
+    cypher: |
+      MATCH (c:Component {id: $component_id})<-[:RELATES_TO]-(req:Requirement)
+      OPTIONAL MATCH (req)<-[:VERIFIES]-(tc:TestCase)
+      RETURN
+          req.id AS requirement_id,
+          req.type AS requirement_type,
+          req.statement AS requirement_statement,
+          req.verification AS verification_method,
+          collect(DISTINCT tc.id) AS test_cases
+      ORDER BY req.type, req.id
+
+  component_impact_analysis:
+    name: "Component Impact Analysis"
+    description: "Analyze impact of changing a component"
+    category: "component"
+    parameters:
+      - component_id
+    cypher: |
+      MATCH (c:Component {id: $component_id})<-[:RELATES_TO]-(req:Requirement)
+      OPTIONAL MATCH (req)-[:DERIVES_FROM]->(parent:Requirement)
+      OPTIONAL MATCH (child:Requirement)-[:DERIVES_FROM]->(req)
+      OPTIONAL MATCH (req)<-[:VERIFIES]-(tc:TestCase)
+      RETURN
+          c.id AS component_id,
+          c.name AS component_name,
+          count(DISTINCT req) AS affected_requirements,
+          collect(DISTINCT req.id) AS requirement_ids,
+          collect(DISTINCT parent.id) AS parent_requirements,
+          collect(DISTINCT child.id) AS child_requirements,
+          collect(DISTINCT tc.id) AS affected_tests
+
+  component_dependencies:
+    name: "Component Dependencies"
+    description: "Get components that this component interacts with"
+    category: "component"
+    parameters:
+      - component_id
+    cypher: |
+      MATCH (c:Component {id: $component_id})-[:HAS_INTERFACE]->(i:Interface)
+      <-[:HAS_INTERFACE]-(other:Component)
+      WHERE other.id <> $component_id
+      RETURN
+          other.id AS component_id,
+          other.name AS component_name,
+          collect(DISTINCT i.protocol) AS shared_protocols,
+          collect(DISTINCT i.id) AS interfaces
+
+  # ==================================
+  # 3. Test Coverage Queries
+  # ==================================
+
+  test_case_details:
+    name: "Test Case Details"
+    description: "Get detailed information about a test case"
+    category: "test"
+    parameters:
+      - test_case_id
+    cypher: |
+      MATCH (tc:TestCase {id: $test_case_id})
+      OPTIONAL MATCH (tc)-[:VERIFIES]->(req:Requirement)
+      OPTIONAL MATCH (req)-[:RELATES_TO]->(c:Component)
+      RETURN
+          tc.id AS test_case_id,
+          tc.type AS test_type,
+          tc.description AS description,
+          tc.status AS status,
+          collect(DISTINCT req.id) AS verified_requirements,
+          collect(DISTINCT c.id) AS tested_components
+
+  unverified_requirements:
+    name: "Unverified Requirements"
+    description: "Find requirements without test cases"
+    category: "test"
+    parameters: []
+    cypher: |
+      MATCH (req:Requirement)
+      WHERE NOT EXISTS { (req)<-[:VERIFIES]-(:TestCase) }
+      RETURN
+          req.id AS requirement_id,
+          req.type AS requirement_type,
+          req.statement AS requirement_statement,
+          req.level AS requirement_level
+      ORDER BY req.type, req.id
+
+  test_coverage_by_type:
+    name: "Test Coverage by Requirement Type"
+    description: "Calculate test coverage percentage by requirement type"
+    category: "test"
+    parameters: []
+    cypher: |
+      MATCH (req:Requirement)
+      OPTIONAL MATCH (req)<-[:VERIFIES]-(tc:TestCase)
+      WITH req.type AS req_type,
+           count(DISTINCT req) AS total_requirements,
+           count(DISTINCT tc) AS verified_count
+      RETURN
+          req_type,
+          total_requirements,
+          verified_count,
+          round(100.0 * verified_count / total_requirements, 1) AS coverage_percentage
+      ORDER BY req_type
+
+  # ==================================
+  # 4. Design Evolution (PDD → DDD)
+  # ==================================
+
+  design_evolution:
+    name: "Design Evolution"
+    description: "Track how a design concept evolved from PDD to DDD"
+    category: "design"
+    parameters:
+      - section_title
+    cypher: |
+      MATCH (pdd:Section)-[:EVOLVED_TO]->(ddd:Section)
+      WHERE pdd.title CONTAINS $section_title OR ddd.title CONTAINS $section_title
+      RETURN
+          pdd.id AS pdd_section_id,
+          pdd.title AS pdd_title,
+          pdd.doc_id AS pdd_doc,
+          ddd.id AS ddd_section_id,
+          ddd.title AS ddd_title,
+          ddd.doc_id AS ddd_doc
+
+  section_requirements:
+    name: "Section Requirements"
+    description: "Get all requirements mentioned in a document section"
+    category: "design"
+    parameters:
+      - section_id
+    cypher: |
+      MATCH (section:Section {id: $section_id})-[:MENTIONS]->(req:Requirement)
+      RETURN
+          section.id AS section_id,
+          section.title AS section_title,
+          collect(req.id) AS mentioned_requirements
+
+  # ==================================
+  # 5. Network/Communication Queries
+  # ==================================
+
+  protocol_components:
+    name: "Components by Protocol"
+    description: "Find all components using a specific protocol"
+    category: "component"
+    parameters:
+      - protocol_name
+    cypher: |
+      MATCH (c:Component)-[:HAS_INTERFACE]->(i:Interface)
+      WHERE i.protocol = $protocol_name
+      RETURN
+          c.id AS component_id,
+          c.name AS component_name,
+          collect(DISTINCT i.id) AS interfaces,
+          collect(DISTINCT i.data_rate_mbps) AS data_rates
+
+  # ==================================
+  # 6. Statistics & Metrics
+  # ==================================
+
+  system_statistics:
+    name: "System Statistics"
+    description: "Get overall system statistics"
+    category: "metrics"
+    parameters: []
+    cypher: |
+      MATCH (req:Requirement)
+      WITH count(req) AS total_requirements
+      MATCH (tc:TestCase)
+      WITH total_requirements, count(tc) AS total_test_cases
+      MATCH (c:Component)
+      WITH total_requirements, total_test_cases, count(c) AS total_components
+      MATCH (s:Section)
+      WITH total_requirements, total_test_cases, total_components, count(s) AS total_sections
+      MATCH (req:Requirement)<-[:VERIFIES]-(tc:TestCase)
+      WITH total_requirements, total_test_cases, total_components, total_sections,
+           count(DISTINCT req) AS verified_requirements
+      RETURN
+          total_requirements,
+          total_test_cases,
+          total_components,
+          total_sections,
+          verified_requirements,
+          round(100.0 * verified_requirements / total_requirements, 1) AS verification_percentage
+
+  requirements_by_type:
+    name: "Requirements by Type"
+    description: "Count requirements by type (FuncR, SafR, PerfR, IntR)"
+    category: "metrics"
+    parameters: []
+    cypher: |
+      MATCH (req:Requirement)
+      RETURN
+          req.type AS requirement_type,
+          count(req) AS count
+      ORDER BY count DESC
+
+  # ==================================
+  # 7. Search Templates
+  # ==================================
+
+  search_by_keyword:
+    name: "Search by Keyword"
+    description: "Full-text search across requirements and sections"
+    category: "search"
+    parameters:
+      - keyword
+    cypher: |
+      CALL db.index.fulltext.queryNodes('requirement_fulltext', $keyword)
+      YIELD node, score
+      WHERE node:Requirement
+      RETURN
+          node.id AS requirement_id,
+          node.statement AS statement,
+          score
+      ORDER BY score DESC
+      LIMIT 10
+
+# Template metadata
+metadata:
+  version: "1.0"
+  last_updated: "2025-10-27"
+  total_templates: 18
+  categories:
+    - traceability
+    - component
+    - test
+    - design
+    - metrics
+    - search
