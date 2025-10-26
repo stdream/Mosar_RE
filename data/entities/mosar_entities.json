@@ -1,0 +1,62 @@
+{
+  "components": {
+    "Walking Manipulator": {"id": "WM", "type": "Component"},
+    "Reduced Instrument Control Unit": {"id": "R-ICU", "type": "Component"},
+    "R-ICU": {"id": "R-ICU", "type": "Component"},
+    "우주선 제어 유닛": {"id": "OBC-S", "type": "Component"},
+    "On-Board Computer": {"id": "OBC-S", "type": "Component"},
+    "OBC-S": {"id": "OBC-S", "type": "Component"},
+    "OBC-C": {"id": "OBC-C", "type": "Component"},
+    "cPDU": {"id": "cPDU", "type": "Component"},
+    "HOTDOCK": {"id": "HOTDOCK", "type": "Component"},
+    "SM1-DMS": {"id": "SM1-DMS", "type": "SpacecraftModule"},
+    "SM2-PWS": {"id": "SM2-PWS", "type": "SpacecraftModule"},
+    "SM3-BAT": {"id": "SM3-BAT", "type": "SpacecraftModule"},
+    "SM4-THS": {"id": "SM4-THS", "type": "SpacecraftModule"},
+    "Service Module": {"id": "SM", "type": "SpacecraftModule"},
+    "워킹 매니퓰레이터": {"id": "WM", "type": "Component"},
+    "감소형 장비 제어 유닛": {"id": "R-ICU", "type": "Component"},
+    "서비스 모듈": {"id": "SM", "type": "SpacecraftModule"}
+  },
+
+  "requirements": {
+    "안전 요구사항": {"type": "Requirement", "filter": {"type": "SafR"}},
+    "기능 요구사항": {"type": "Requirement", "filter": {"type": "FuncR"}},
+    "성능 요구사항": {"type": "Requirement", "filter": {"type": "PerfR"}},
+    "인터페이스 요구사항": {"type": "Requirement", "filter": {"type": "IntR"}},
+    "설계 요구사항": {"type": "Requirement", "filter": {"type": "DesR"}},
+    "safety requirements": {"type": "Requirement", "filter": {"type": "SafR"}},
+    "functional requirements": {"type": "Requirement", "filter": {"type": "FuncR"}},
+    "performance requirements": {"type": "Requirement", "filter": {"type": "PerfR"}},
+    "interface requirements": {"type": "Requirement", "filter": {"type": "IntR"}},
+    "design requirements": {"type": "Requirement", "filter": {"type": "DesR"}}
+  },
+
+  "scenarios": {
+    "첫 번째 시나리오": {"id": "S1", "type": "Scenario"},
+    "두 번째 시나리오": {"id": "S2", "type": "Scenario"},
+    "세 번째 시나리오": {"id": "S3", "type": "Scenario"},
+    "Scenario 1": {"id": "S1", "type": "Scenario"},
+    "Scenario 2": {"id": "S2", "type": "Scenario"},
+    "Scenario 3": {"id": "S3", "type": "Scenario"},
+    "SM 조립 시나리오": {"id": "S1", "type": "Scenario"},
+    "SM 교체 시나리오": {"id": "S2", "type": "Scenario"}
+  },
+
+  "organizations": {
+    "스페이스앱스": {"id": "SPACEAPPS", "type": "Organization"},
+    "SPACEAPPS": {"id": "SPACEAPPS", "type": "Organization"},
+    "TAS-UK": {"id": "TAS-UK", "type": "Organization"},
+    "GMV": {"id": "GMV", "type": "Organization"},
+    "DLR": {"id": "DLR", "type": "Organization"},
+    "SITAEL": {"id": "SITAEL", "type": "Organization"}
+  },
+
+  "protocols": {
+    "SpaceWire": {"id": "SpaceWire", "type": "Protocol"},
+    "RMAP": {"id": "RMAP", "type": "Protocol"},
+    "CAN": {"id": "CAN", "type": "Protocol"},
+    "CAN bus": {"id": "CAN", "type": "Protocol"},
+    "Ethernet": {"id": "Ethernet", "type": "Protocol"}
+  }
+}

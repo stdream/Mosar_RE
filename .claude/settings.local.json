@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(timeout 300 tail:*)",
+      "Bash(py -3.11 -m poetry install:*)",
+      "Bash(py -3.11 -m poetry run python:*)",
+      "Bash(py -3.11 -m poetry show:*)",
+      "Bash(py -3.11 -m poetry add:*)",
+      "Bash(py:*)",
+      "Bash(timeout 90 py -3.11 -m poetry run python:*)",
+      "Bash(set:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
