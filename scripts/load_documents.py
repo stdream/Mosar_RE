@@ -45,6 +45,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Use ASCII-only output for Windows compatibility
 console = Console()
 
 
@@ -83,9 +84,9 @@ class DocumentLoadManager:
         try:
             client = Neo4jClient()
             client.close()
-            console.print("✓ Neo4j connection successful", style="green")
+            console.print("[OK] Neo4j connection successful", style="green")
         except Exception as e:
-            console.print(f"✗ Neo4j connection failed: {e}", style="red")
+            console.print(f"[ERROR] Neo4j connection failed: {e}", style="red")
             raise
 
         # Check document files
@@ -94,15 +95,15 @@ class DocumentLoadManager:
             if not path.exists():
                 missing_files.append(str(path))
             else:
-                console.print(f"✓ Found: {path.name}", style="green")
+                console.print(f"[OK] Found: {path.name}", style="green")
 
         if missing_files:
-            console.print(f"\n[red]✗ Missing files:[/red]")
+            console.print(f"\n[red][ERROR] Missing files:[/red]")
             for f in missing_files:
                 console.print(f"  - {f}", style="red")
             raise FileNotFoundError(f"Missing {len(missing_files)} document files")
 
-        console.print("\n[bold green]✓ Environment verification complete[/bold green]\n")
+        console.print("\n[bold green][OK] Environment verification complete[/bold green]\n")
 
     def load_srd(self):
         """Load System Requirements Document."""
@@ -115,21 +116,21 @@ class DocumentLoadManager:
                 requirements = self.srd_parser.parse(self.srd_path)
                 self.stats["requirements"] = len(requirements)
 
-            console.print(f"✓ Parsed {len(requirements)} requirements", style="green")
+            console.print(f"[OK] Parsed {len(requirements)} requirements", style="green")
 
             with console.status("[bold green]Generating embeddings..."):
                 requirements_with_embeddings = self.embedder.embed_requirements(requirements)
                 self.stats["embeddings"] += len(requirements)
 
-            console.print(f"✓ Generated {len(requirements)} requirement embeddings", style="green")
+            console.print(f"[OK] Generated {len(requirements)} requirement embeddings", style="green")
 
             with console.status("[bold green]Loading to Neo4j..."):
-                self.loader.load_srd(requirements_with_embeddings)
+                self.loader.load_requirements(requirements_with_embeddings)
 
-            console.print(f"✓ Loaded {len(requirements)} requirements to Neo4j", style="green")
+            console.print(f"[OK] Loaded {len(requirements)} requirements to Neo4j", style="green")
 
         except Exception as e:
-            console.print(f"✗ SRD loading failed: {e}", style="red")
+            console.print(f"[ERROR] SRD loading failed: {e}", style="red")
             self.stats["errors"] += 1
             raise
 
@@ -142,13 +143,15 @@ class DocumentLoadManager:
         try:
             # Parse PDD
             with console.status("[bold green]Parsing PDD..."):
-                pdd_sections = self.design_parser.parse(self.pdd_path, doc_type="PDD")
-                console.print(f"✓ Parsed {len(pdd_sections)} PDD sections", style="green")
+                pdd_parser = DesignDocParser(doc_type="PDD")
+                pdd_sections = pdd_parser.parse(self.pdd_path)
+                console.print(f"[OK] Parsed {len(pdd_sections)} PDD sections", style="green")
 
             # Parse DDD
             with console.status("[bold green]Parsing DDD..."):
-                ddd_sections = self.design_parser.parse(self.ddd_path, doc_type="DDD")
-                console.print(f"✓ Parsed {len(ddd_sections)} DDD sections", style="green")
+                ddd_parser = DesignDocParser(doc_type="DDD")
+                ddd_sections = ddd_parser.parse(self.ddd_path)
+                console.print(f"[OK] Parsed {len(ddd_sections)} DDD sections", style="green")
 
             all_sections = pdd_sections + ddd_sections
             self.stats["sections"] = len(all_sections)
@@ -158,16 +161,22 @@ class DocumentLoadManager:
                 sections_with_embeddings = self.embedder.embed_sections(all_sections)
                 self.stats["embeddings"] += len(sections_with_embeddings)
 
-            console.print(f"✓ Generated {len(sections_with_embeddings)} section embeddings", style="green")
+            console.print(f"[OK] Generated {len(sections_with_embeddings)} section embeddings", style="green")
 
-            # Load to Neo4j
-            with console.status("[bold green]Loading to Neo4j..."):
-                self.loader.load_design_documents(sections_with_embeddings)
+            # Load PDD sections
+            with console.status("[bold green]Loading PDD to Neo4j..."):
+                pdd_sections_with_emb = [s for s in sections_with_embeddings if s.get("doc_type") == "PDD"]
+                self.loader.load_design_sections(pdd_sections_with_emb, doc_type="PDD")
 
-            console.print(f"✓ Loaded {len(all_sections)} design sections to Neo4j", style="green")
+            # Load DDD sections
+            with console.status("[bold green]Loading DDD to Neo4j..."):
+                ddd_sections_with_emb = [s for s in sections_with_embeddings if s.get("doc_type") == "DDD"]
+                self.loader.load_design_sections(ddd_sections_with_emb, doc_type="DDD")
+
+            console.print(f"[OK] Loaded {len(all_sections)} design sections to Neo4j", style="green")
 
         except Exception as e:
-            console.print(f"✗ Design documents loading failed: {e}", style="red")
+            console.print(f"[ERROR] Design documents loading failed: {e}", style="red")
             self.stats["errors"] += 1
             raise
 
@@ -182,15 +191,15 @@ class DocumentLoadManager:
                 test_cases = self.demo_parser.parse(self.demo_path)
                 self.stats["test_cases"] = len(test_cases)
 
-            console.print(f"✓ Parsed {len(test_cases)} test cases", style="green")
+            console.print(f"[OK] Parsed {len(test_cases)} test cases", style="green")
 
             with console.status("[bold green]Loading to Neo4j..."):
-                self.loader.load_demo_procedures(test_cases)
+                self.loader.load_test_cases(test_cases)
 
-            console.print(f"✓ Loaded {len(test_cases)} test cases to Neo4j", style="green")
+            console.print(f"[OK] Loaded {len(test_cases)} test cases to Neo4j", style="green")
 
         except Exception as e:
-            console.print(f"✗ Demo procedures loading failed: {e}", style="red")
+            console.print(f"[ERROR] Demo procedures loading failed: {e}", style="red")
             self.stats["errors"] += 1
             raise
 
@@ -271,11 +280,11 @@ def main():
             console.print("\n[yellow]⚠ Loading completed with errors[/yellow]")
             sys.exit(1)
         else:
-            console.print("\n[bold green]✓ All documents loaded successfully![/bold green]")
+            console.print("\n[bold green][OK] All documents loaded successfully![/bold green]")
             sys.exit(0)
 
     except Exception as e:
-        console.print(f"\n[bold red]✗ Fatal error: {e}[/bold red]")
+        console.print(f"\n[bold red][ERROR] Fatal error: {e}[/bold red]")
         logger.exception("Fatal error during document loading")
         sys.exit(1)
 

@@ -45,18 +45,26 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
 
     try:
         # Priority: Requirement → Component → TestCase → Protocol
-        if "requirements" in matched_entities and matched_entities["requirements"]:
-            req_id = matched_entities["requirements"][0]
+        # Handle both "Requirement"/"requirements", "Component"/"components", etc.
+        requirement_key = next((k for k in matched_entities.keys() if k.lower() in ["requirement", "requirements"]), None)
+        component_key = next((k for k in matched_entities.keys() if k.lower() in ["component", "components"]), None)
+        testcase_key = next((k for k in matched_entities.keys() if k.lower() in ["testcase", "test_case", "test_cases"]), None)
+
+        if requirement_key and matched_entities[requirement_key]:
+            req_data = matched_entities[requirement_key][0]
+            req_id = req_data if isinstance(req_data, str) else req_data.get("id")
             cypher_query = templates.get_requirement_traceability(req_id)
             logger.info(f"Using requirement traceability template for {req_id}")
 
-        elif "components" in matched_entities and matched_entities["components"]:
-            comp_id = matched_entities["components"][0]
+        elif component_key and matched_entities[component_key]:
+            comp_data = matched_entities[component_key][0]
+            comp_id = comp_data if isinstance(comp_data, str) else comp_data.get("id")
             cypher_query = templates.get_component_requirements(comp_id)
             logger.info(f"Using component requirements template for {comp_id}")
 
-        elif "test_cases" in matched_entities and matched_entities["test_cases"]:
-            tc_id = matched_entities["test_cases"][0]
+        elif testcase_key and matched_entities[testcase_key]:
+            tc_data = matched_entities[testcase_key][0]
+            tc_id = tc_data if isinstance(tc_data, str) else tc_data.get("id")
             cypher_query = templates.get_test_case_details(tc_id)
             logger.info(f"Using test case details template for {tc_id}")
 

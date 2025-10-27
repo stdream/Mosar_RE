@@ -13,7 +13,7 @@ import pytest
 import time
 from typing import Dict, Any
 
-from src.graphrag.workflow import build_workflow
+from src.graphrag.workflow import GraphRAGWorkflow
 from src.graphrag.state import GraphRAGState
 from src.query.router import QueryPath
 
@@ -25,8 +25,8 @@ pytestmark = [pytest.mark.e2e, pytest.mark.requires_neo4j, pytest.mark.requires_
 @pytest.fixture(scope="module")
 def graphrag_workflow():
     """Build GraphRAG workflow once for all tests."""
-    workflow = build_workflow()
-    return workflow
+    workflow_obj = GraphRAGWorkflow()
+    return workflow_obj.graph
 
 
 class TestKeyQuestions:
