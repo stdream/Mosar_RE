@@ -4,17 +4,29 @@ Cypher Query Node - Execute Cypher queries against Neo4j
 Supports:
 1. Template-based Cypher (Path A: Pure Cypher)
 2. Contextual Cypher (Path B: Hybrid with extracted entities)
-3. Dynamic query generation
+3. Dynamic query generation (Text2Cypher with LLM)
 """
 
 import logging
+import os
 from typing import Dict, List, Any, Optional
 
 from src.graphrag.state import GraphRAGState
 from src.utils.neo4j_client import Neo4jClient
 from src.query.cypher_templates import CypherTemplates
+from src.query.text2cypher import Text2CypherGenerator
 
 logger = logging.getLogger(__name__)
+
+# Global Text2Cypher generator (initialize once)
+_text2cypher_generator = None
+
+def get_text2cypher_generator() -> Text2CypherGenerator:
+    """Get or create Text2Cypher generator (singleton pattern)."""
+    global _text2cypher_generator
+    if _text2cypher_generator is None:
+        _text2cypher_generator = Text2CypherGenerator()
+    return _text2cypher_generator
 
 
 def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
@@ -96,7 +108,9 @@ def run_contextual_cypher(state: GraphRAGState) -> GraphRAGState:
     """
     LangGraph Node: Generate and execute contextual Cypher (Path B).
 
-    Uses extracted entities from NER to build targeted graph query.
+    Uses two approaches:
+    1. Text2Cypher (LLM-based) - Tries first if enabled
+    2. Pattern-based fallback - Uses _build_contextual_query()
 
     Args:
         state: Current GraphRAGState with 'extracted_entities' populated
@@ -106,6 +120,7 @@ def run_contextual_cypher(state: GraphRAGState) -> GraphRAGState:
     """
     extracted_entities = state.get("extracted_entities", {})
     user_question = state["user_question"]
+    language = state.get("language", "en")
 
     if not extracted_entities:
         logger.warning("No extracted entities for contextual Cypher")
@@ -114,8 +129,37 @@ def run_contextual_cypher(state: GraphRAGState) -> GraphRAGState:
 
     logger.info(f"Building contextual Cypher with entities: {extracted_entities}")
 
-    # Build Cypher query based on entity types
-    cypher_query = _build_contextual_query(user_question, extracted_entities)
+    # Try Text2Cypher first (if enabled)
+    use_text2cypher = os.getenv("USE_TEXT2CYPHER", "true").lower() == "true"
+    cypher_query = None
+    query_method = "pattern"  # Track which method was used
+
+    if use_text2cypher:
+        try:
+            logger.info("Attempting Text2Cypher generation")
+            generator = get_text2cypher_generator()
+            cypher_query, confidence = generator.generate(
+                user_question=user_question,
+                extracted_entities=extracted_entities,
+                language=language
+            )
+            query_method = f"text2cypher (confidence={confidence:.2f})"
+            logger.info(f"Text2Cypher generated query with confidence {confidence:.2f}")
+
+            # If confidence is too low, fall back to pattern-based
+            if confidence < 0.5:
+                logger.warning(f"Text2Cypher confidence too low ({confidence:.2f}), using pattern fallback")
+                cypher_query = None  # Will trigger fallback below
+
+        except Exception as e:
+            logger.warning(f"Text2Cypher failed: {e}, falling back to pattern-based")
+            cypher_query = None
+
+    # Fallback to pattern-based query
+    if cypher_query is None:
+        logger.info("Using pattern-based query generation")
+        cypher_query = _build_contextual_query(user_question, extracted_entities)
+        query_method = "pattern"
 
     try:
         # Execute query
@@ -123,11 +167,12 @@ def run_contextual_cypher(state: GraphRAGState) -> GraphRAGState:
         results = neo4j_client.execute(cypher_query)
         neo4j_client.close()
 
-        logger.info(f"Contextual Cypher returned {len(results)} results")
+        logger.info(f"Contextual Cypher returned {len(results)} results (method={query_method})")
 
         # Update state
         state["cypher_query"] = cypher_query
         state["graph_results"] = results
+        state["query_generation_method"] = query_method  # Track method used
 
     except Exception as e:
         logger.error(f"Contextual Cypher execution failed: {e}")

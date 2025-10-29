@@ -1,0 +1,36 @@
+# MOSAR GraphRAG System - Requirements
+# Generated for Streamlit Cloud deployment
+
+# Core Framework
+langgraph>=0.2.16
+langchain>=0.3.0
+langchain-openai>=0.2.0
+langchain-core>=0.3.0
+
+# Database
+neo4j>=5.14.0
+
+# LLM & Embeddings
+openai>=1.50.0
+
+# NLP
+spacy>=3.7.0
+sentence-transformers>=2.3.0
+
+# Entity Resolution
+fuzzywuzzy>=0.18.0
+python-levenshtein>=0.25.0
+
+# Utilities
+pydantic>=2.5.0
+python-dotenv>=1.0.0
+pyyaml>=6.0
+rich>=13.7.0
+
+# Web Interface
+streamlit>=1.30.0
+
+# Testing (optional)
+pytest>=8.0.0
+pytest-cov>=4.1.0
+pytest-asyncio>=0.23.0

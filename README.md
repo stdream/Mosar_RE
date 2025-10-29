@@ -4,8 +4,16 @@ A Graph-based Retrieval Augmented Generation (GraphRAG) system for the MOSAR (Mo
 
 ## Project Status
 
-**Current Phase**: Planning Complete ✅
-**Next Phase**: Phase 0 - Environment Setup ⏳
+**Phase 0-6**: ✅ **COMPLETE** (Production Ready)
+- Phase 0: Environment Setup ✅
+- Phase 1: Graph Schema ✅
+- Phase 2: Data Loading ✅
+- Phase 3: LangGraph Workflow ✅
+- Phase 4: Testing & Validation ✅
+- **Phase 5**: Advanced Features (Text2Cypher + Streaming) ✅ **NEW**
+- **Phase 6**: Web UI (Streamlit) ✅ **NEW**
+
+**Try it now**: `streamlit run streamlit_app.py`
 
 ## Overview
 
@@ -19,11 +27,21 @@ This system ingests MOSAR technical documentation (Requirements, Preliminary Des
   - Layer 3: Domain System Graph (MOSAR components, modules, interfaces)
   - Layer 4: Requirements Traceability (V-Model: requirement → design → implementation → verification)
 
-- **Hybrid Query Strategy**
+- **Advanced Query Capabilities** 🆕
+  - **Text2Cypher with Guardrails**: LLM-based natural language → Cypher conversion
+  - **Streaming Responses**: Real-time token-by-token answer generation
   - Adaptive routing: Entity Dictionary → NER → Vector/Cypher selection
   - Vector search with OpenAI embeddings (text-embedding-3-large, 3072 dimensions)
   - Contextual Cypher queries for structured data retrieval
   - LLM synthesis for natural language responses
+
+- **Full-Stack Web Interface** 🆕
+  - **Streamlit Web UI**: Browser-based access, no installation required
+  - Real-time streaming with progress indicators
+  - Query history and session statistics
+  - Performance metrics and visualizations
+  - Multi-language support (Korean/English)
+  - One-click example questions
 
 - **Full Traceability**
   - 227 system requirements tracked end-to-end
@@ -33,18 +51,37 @@ This system ingests MOSAR technical documentation (Requirements, Preliminary Des
 
 ## Quick Start
 
-**New to this project?** Start here:
-
-1. Read [QUICKSTART.md](QUICKSTART.md) for immediate next steps
-2. Review [CLAUDE.md](CLAUDE.md) for architecture details
-3. Check [PRD.md](PRD.md) for complete implementation plan
-
-**Resuming development?**
+### Running the Web UI 🚀
 
 ```bash
-# Next session command:
-# "QUICKSTART.md를 읽고 Phase 0 시작해줘"
+# 1. Install dependencies
+pip install -r requirements.txt
+
+# 2. Set environment variables
+cp .env.example .env
+# Edit .env with your Neo4j and OpenAI credentials
+
+# 3. Load data (if not already loaded)
+python scripts/load_documents.py
+
+# 4. Run web interface
+streamlit run streamlit_app.py
+
+# Access at http://localhost:8501
 ```
+
+### Running CLI
+
+```bash
+# Interactive CLI
+python src/graphrag/app.py
+```
+
+### For Developers
+
+1. Read [CLAUDE.md](CLAUDE.md) for architecture details
+2. Check [PRD.md](PRD.md) for complete implementation plan
+3. Review [PHASE5_COMPLETE.md](PHASE5_COMPLETE.md) and [PHASE6_COMPLETE.md](PHASE6_COMPLETE.md) for latest features
 
 ## Documentation
 
@@ -56,13 +93,14 @@ This system ingests MOSAR technical documentation (Requirements, Preliminary Des
 
 ## Technology Stack
 
-- **Graph Database**: Neo4j 5.14+ with APOC plugin
+- **Graph Database**: Neo4j 5.14+ (Aura Cloud)
 - **Workflow**: LangGraph 0.2+ (stateful orchestration)
-- **LLM**: OpenAI GPT-4o (synthesis + NER)
+- **LLM**: OpenAI GPT-4o (synthesis, NER, Text2Cypher)
 - **Embeddings**: OpenAI text-embedding-3-large (3072 dim)
 - **NER**: spaCy 3.7+ with transformers
+- **Web Framework**: Streamlit 1.30+ 🆕
 - **Language**: Python 3.11+
-- **Package Manager**: Poetry
+- **Package Manager**: Poetry / pip
 
 ## Expected Data Scale
 
@@ -75,30 +113,42 @@ This system ingests MOSAR technical documentation (Requirements, Preliminary Des
 
 ## Implementation Roadmap
 
-### Phase 0: Environment Setup (Days 1-2) ⏳ NEXT
-- Neo4j installation and configuration
+### Phase 0: Environment Setup ✅ COMPLETE
+- Neo4j Aura configuration
 - Python environment with all dependencies
 - Database constraints and vector indexes
 - Entity Dictionary initialization
 
-### Phase 1: Data Ingestion (Days 3-7)
+### Phase 1: Graph Schema ✅ COMPLETE
 - Document parsers (SRD, PDD, DDD, Demo Procedures)
 - Layer 1-4 graph construction
 - Embedding generation and indexing
 
-### Phase 2: Basic Query (Days 8-10)
+### Phase 2: Data Loading ✅ COMPLETE
 - Pure Cypher template queries
 - Basic retrieval and traceability
 
-### Phase 3: Hybrid Query Workflow (Days 11-14)
+### Phase 3: LangGraph Workflow ✅ COMPLETE
 - LangGraph workflow implementation
 - Vector → NER → Cypher → LLM chain
 - Adaptive routing logic
 
-### Phase 4: Advanced Features (Days 15-20)
+### Phase 4: Testing & Validation ✅ COMPLETE
 - Human-in-the-loop (HITL) debugging
 - Performance optimization
-- Comprehensive testing
+- Comprehensive testing (50+ unit tests, 5 E2E tests)
+
+### Phase 5: Advanced Features ✅ COMPLETE 🆕
+- **Text2Cypher**: LLM-based natural language → Cypher conversion
+- **Safety Guardrails**: Multi-layer validation system
+- **Streaming Responses**: Real-time token-by-token generation
+- **Confidence Scoring**: Query quality estimation
+
+### Phase 6: Production Deployment ✅ COMPLETE 🆕
+- **Streamlit Web UI**: Full-stack browser interface
+- **Real-time Metrics**: Query history, performance dashboard
+- **Multi-language Support**: Korean/English
+- **Deployment Ready**: Streamlit Cloud compatible
 
 ## Repository Structure
 

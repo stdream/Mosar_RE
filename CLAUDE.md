@@ -1,442 +1,817 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
 # MOSAR GraphRAG System
 
-## Project Overview
+## Project Status
 
-This repository contains the implementation of a **GraphRAG (Graph-based Retrieval Augmented Generation)** system for the MOSAR (Modular Spacecraft Assembly and Reconfiguration) project. The system ingests technical documentation (requirements, preliminary design, detailed design, and test procedures) into a Neo4j graph database and enables intelligent querying with hybrid vector + Cypher approaches.
+**IMPLEMENTATION COMPLETE** ✅ (All Phases 0-4)
+- Production-ready GraphRAG system for spacecraft requirements engineering
+- Comprehensive test suite with 80%+ coverage
+- Full V-Model traceability for 227 requirements
+- Response times: Pure Cypher <500ms, Hybrid <2000ms
 
-**Key Metrics**:
-- 227 system requirements tracked with complete V-Model traceability
-- 500+ document sections from PDD, DDD, SRD, Demo Procedures
-- ~3,000 nodes and ~4,300 relationships expected
-- Target response time: <2 seconds
-- Target accuracy: >90% for known entities
+**Last Updated**: 2025-10-27
 
-## Architecture
+## Quick Reference
+
+### Common Commands
+
+```bash
+# Development Environment
+poetry shell                           # Activate virtual environment
+poetry install                         # Install dependencies
+
+# Testing
+pytest                                 # Run all tests
+pytest tests/test_e2e.py              # Run end-to-end tests
+pytest tests/test_e2e.py::test_question_1  # Run single test
+pytest -m unit                         # Run only unit tests
+pytest -m "not requires_openai"       # Skip tests requiring OpenAI API
+pytest --cov=src --cov-report=html    # Generate coverage report
+
+# Data Loading
+python scripts/load_documents.py      # Load all documents (SRD, PDD, DDD, Demo)
+python scripts/load_srd.py            # Load requirements only
+python scripts/load_design_docs.py    # Load PDD/DDD only
+
+# Validation & Debugging
+python scripts/check_neo4j_status.py  # Check database status
+python scripts/check_embeddings.py    # Verify vector embeddings
+python scripts/test_workflow.py       # Test LangGraph workflow
+python scripts/test_environment.py    # Verify environment setup
+
+# Running the System
+python src/graphrag/app.py            # Interactive CLI
+python scripts/demo_cli.py            # Non-interactive demo
+
+# Neo4j
+# Access Neo4j Browser at http://localhost:7474
+# Credentials in .env file
+```
+
+### Project Structure
+
+```
+ReqEng/
+├── src/                           # Main source code
+│   ├── graphrag/                  # LangGraph workflow
+│   │   ├── app.py                # CLI application (ENTRY POINT)
+│   │   ├── workflow.py           # Main LangGraph workflow definition
+│   │   ├── state.py              # State schema (GraphRAGState)
+│   │   ├── hitl.py               # Human-in-the-loop review system
+│   │   └── nodes/                # Individual workflow nodes
+│   │       ├── vector_search_node.py   # Vector similarity search
+│   │       ├── ner_node.py            # Entity extraction
+│   │       ├── cypher_node.py         # Cypher query generation/execution
+│   │       └── synthesize_node.py     # LLM response synthesis
+│   ├── ingestion/                 # Document parsing and loading
+│   │   ├── srd_parser.py         # Requirements parser
+│   │   ├── design_doc_parser.py  # PDD/DDD parser
+│   │   ├── demo_procedure_parser.py  # Test case parser
+│   │   ├── embedder.py           # OpenAI embedding generation
+│   │   ├── text_chunker.py       # Text chunking for vector search
+│   │   └── neo4j_loader.py       # Bulk loading to Neo4j
+│   ├── query/                     # Query routing
+│   │   ├── router.py             # Adaptive query routing
+│   │   └── cypher_templates.py   # Template Cypher queries
+│   ├── utils/                     # Utilities
+│   │   ├── neo4j_client.py       # Neo4j connection management
+│   │   ├── entity_resolver.py    # Entity Dictionary lookup
+│   │   └── cache.py              # Multi-tier caching
+│   └── neo4j_schema/              # Database schema
+│       └── create_schema.py      # Schema initialization
+├── scripts/                       # Execution scripts
+│   ├── load_*.py                 # Data loading scripts
+│   ├── check_*.py                # Validation scripts
+│   └── test_*.py                 # Test scripts
+├── tests/                         # Test suite
+│   ├── conftest.py               # Pytest fixtures
+│   ├── test_*_node.py            # Unit tests (50+ tests)
+│   └── test_e2e.py               # End-to-end tests (5 key questions)
+├── data/                          # Data files
+│   ├── entities/                 # Entity Dictionary
+│   │   └── mosar_entities.json   # Domain-specific entity mappings
+│   └── templates/                # Cypher query templates
+├── Documents/                     # Source documents
+│   ├── SRD/                      # System Requirements (227 reqs)
+│   ├── PDD/                      # Preliminary Design
+│   ├── DDD/                      # Detailed Design
+│   └── Demo/                     # Test Procedures
+├── notebooks/                     # Jupyter notebooks
+│   └── benchmark.ipynb           # Performance benchmarking
+├── pyproject.toml                # Dependencies (Poetry)
+├── pytest.ini                    # Pytest configuration
+├── .env                          # Environment variables (not in git)
+├── ARCHITECTURE.md               # Detailed architecture docs
+├── PRD.md                        # Product requirements document
+├── QUICKSTART.md                 # Quick start guide
+└── PHASE*_COMPLETE.md            # Phase completion reports
+```
+
+---
+
+## System Architecture
+
+### High-Level Overview
+
+The MOSAR GraphRAG system uses a **3-tier adaptive routing strategy** to answer questions:
+
+1. **Router**: Analyzes question → Routes to optimal path based on entity detection
+2. **Execution Paths**: Three paths optimized for different query types
+3. **Synthesis**: LLM generates natural language response with citations
+
+### 3 Query Execution Paths
+
+#### Path A: Pure Cypher (Structural Queries)
+**When**: High-confidence entity detection (>90%)
+**Example**: "Show all requirements verified by R-ICU"
+**Flow**: Router → Template Cypher → Format Results → Return
+**Speed**: <500ms
+
+#### Path B: Hybrid (Natural Language Queries)
+**When**: Medium-confidence entities OR complex questions
+**Example**: "네트워크 통신을 담당하는 하드웨어는?" (What hardware handles network communication?)
+**Flow**: Router → Vector Search → NER Extraction → Contextual Cypher → LLM Synthesis → Return
+**Speed**: <2000ms
+
+#### Path C: Pure Vector (Exploratory Queries)
+**When**: No clear entities detected
+**Example**: "What are the main challenges in orbital assembly?"
+**Flow**: Router → Vector Search → LLM Synthesis → Return
+**Speed**: <2000ms
+
+### LangGraph Workflow Architecture
+
+The system uses [LangGraph](https://langchain-ai.github.io/langgraph/) for stateful workflow orchestration:
+
+```python
+# Workflow structure (see src/graphrag/workflow.py)
+StateGraph(GraphRAGState)
+    ↓
+[route_query] → Analyzes question, detects entities
+    ├─→ [template_cypher] → [synthesize] → END  (Path A)
+    ├─→ [vector_search] → [extract_entities] → [contextual_cypher] → [synthesize] → END  (Path B)
+    └─→ [vector_search] → [synthesize] → END  (Path C)
+```
+
+**Key State Fields** (see [src/graphrag/state.py](src/graphrag/state.py)):
+- `user_question`: Input question
+- `query_path`: Chosen path (PURE_CYPHER/HYBRID/PURE_VECTOR)
+- `matched_entities`: Entities detected by router
+- `top_k_sections`: Vector search results
+- `extracted_entities`: NER-extracted entities
+- `cypher_query`: Generated Cypher query
+- `graph_results`: Graph query results
+- `final_answer`: LLM-generated response
+- `citations`: Source documents
+
+---
+
+## Graph Database Schema
 
 ### 4-Layer Graph Model
 
-The system uses a sophisticated 4-layer graph architecture where each layer serves a distinct purpose:
+The Neo4j database uses a 4-layer architecture:
 
-#### Layer 1: Document Structure Graph (Lexical)
-Preserves the original document hierarchy and structure:
-- **Nodes**: `Document`, `Section`, `Subsection`, `TextChunk`
-- **Relationships**: `HAS_SECTION`, `HAS_SUBSECTION`, `CONTAINS_CHUNK`, `NEXT_SECTION`, `PARENT_SECTION`
-- **Purpose**: Maintains document context, enables navigation, supports chunk-based vector search
+**Layer 1: Document Structure** - Document hierarchy (Document → Section → TextChunk)
+**Layer 2: Selective Entities** - Domain entities (Protocol, Technology, Organization)
+**Layer 3: Domain System** - MOSAR architecture (Component, Module, Interface)
+**Layer 4: V-Model Traceability** - Requirements lifecycle (Requirement → Design → Test)
 
-```cypher
-(:Document {id, title, version, type})-[:HAS_SECTION]->
-(:Section {id, title, level, content_summary})-[:CONTAINS_CHUNK]->
-(:TextChunk {id, text, embedding[3072], start_char, end_char})
-```
-
-#### Layer 2: Selective Entity Extraction
-Domain-specific entities extracted from documents:
-- **Nodes**: `Protocol`, `Technology`, `Organization`, `Person`, `Concept`
-- **Relationships**: `MENTIONED_IN`, `RELATED_TO`
-- **Purpose**: Entity-based navigation and relationship discovery
+### Key Node Types
 
 ```cypher
-(:Component {id, name, type})<-[:MENTIONS]-
-(:Section)-[:MENTIONS]->
-(:Technology {name, category})
+// Layer 4: Requirements & Tests
+(:Requirement {id, type, statement, level, verification, statement_embedding})
+(:TestCase {id, type, name, objective, procedure, status})
+
+// Layer 3: System Components
+(:Component {id, name, type, hardware_platform, mass_kg, power_w})
+(:SpacecraftModule {id, name, type})
+(:Interface {id, protocol, data_rate_mbps})
+
+// Layer 1: Documents
+(:Document {id, title, version, type})
+(:Section {id, title, content, content_embedding, doc_id, number})
+(:TextChunk {id, text, embedding, doc_id, section_id})
 ```
 
-#### Layer 3: Domain System Graph (MOSAR Architecture)
-Models the actual MOSAR spacecraft system:
-- **Nodes**: `Component`, `SpacecraftModule`, `Interface`, `SoftwareTask`, `Scenario`, `Protocol`
-- **Relationships**: `HAS_INTERFACE`, `RUNS_ON`, `COMMUNICATES_VIA`, `PART_OF`, `EXECUTES`, `INTERACTS_WITH`
-- **Purpose**: System architecture queries, dependency analysis, scenario modeling
+### Key Relationships
 
 ```cypher
-(:SpacecraftModule {id: "SM", name: "Service Module"})-[:CONTAINS]->
-(:Component {id: "R-ICU", name: "Reduced Instrument Control Unit",
-             hardware_platform: "Zynq UltraScale+ MPSoC", mass_kg: 0.65})-[:HAS_INTERFACE]->
-(:Interface {id: "CAN-BUS-1", protocol: "CAN", data_rate_mbps: 1.0})
+// V-Model Traceability
+(req:Requirement)-[:VERIFIES]-(tc:TestCase)
+(req:Requirement)-[:RELATES_TO]->(comp:Component)
+(req:Requirement)-[:DERIVES_FROM]->(parent_req:Requirement)
+
+// System Architecture
+(comp:Component)-[:HAS_INTERFACE]->(iface:Interface)
+(comp:Component)-[:PART_OF]->(module:SpacecraftModule)
+
+// Document Structure
+(doc:Document)-[:HAS_SECTION]->(sec:Section)
+(sec:Section)-[:CONTAINS_CHUNK]->(chunk:TextChunk)
+(sec:Section)-[:MENTIONS]->(comp:Component)
 ```
 
-#### Layer 4: Requirements Traceability (V-Model)
-Complete requirements lifecycle tracking:
-- **Nodes**: `Requirement`, `DesignConcept`, `DetailedDesign`, `TestCase`, `VerificationMethod`
-- **Relationships**: `PRELIMINARY_DESIGN`, `REFINED_TO`, `IMPLEMENTED_BY`, `VERIFIES`, `DEPENDS_ON`, `COVERS`
-- **Purpose**: Requirements traceability, verification status, impact analysis
+### Vector Indexes
 
 ```cypher
-(:Requirement {id: "FuncR_S110", type: "FuncR", statement: "...", status: "verified"})-[:PRELIMINARY_DESIGN]->
-(:DesignConcept {id: "NET-ARCH-PDD", source: "PDD"})-[:REFINED_TO {changes: "...", completeness: 95}]->
-(:DetailedDesign {id: "NET-ARCH-DDD", source: "DDD"})-[:IMPLEMENTED_BY]->
-(:Component {id: "R-ICU"})<-[:VERIFIES]-
-(:TestCase {id: "TC_NET_001", procedure: "Demo Procedure 3.2"})
+// 3072-dimensional OpenAI embeddings (text-embedding-3-large)
+VECTOR INDEX section_embeddings FOR (s:Section) ON (s.content_embedding)
+VECTOR INDEX chunk_embeddings FOR (c:TextChunk) ON (c.embedding)
+VECTOR INDEX requirement_embeddings FOR (r:Requirement) ON (r.statement_embedding)
 ```
 
-### Cross-Layer Relationships
+---
 
-Critical relationships connecting the layers:
-- `DEFINED_IN`: Requirements/Components → Document Sections
-- `MENTIONS`: Sections → Components/Requirements
-- `EVOLVED_TO`: PDD Sections → DDD Sections (design evolution tracking)
+## Key Components Deep Dive
 
-## Technology Stack
+### 1. Router ([src/query/router.py](src/query/router.py))
 
-### Core Technologies
-- **LangGraph (^0.2.0)**: Stateful workflow orchestration with conditional routing
-- **Neo4j Python Driver (^5.14.0)**: Graph database interaction
-- **OpenAI API (^1.3.0)**: LLM for NER, synthesis, and embeddings
-  - Embeddings: `text-embedding-3-large` (3072 dimensions, cosine similarity)
-  - LLM: `gpt-4o` for entity extraction and response synthesis
-- **spaCy (^3.7.0)**: Named Entity Recognition (with transformers)
+**Purpose**: Determines optimal query path based on entity detection
 
-### Supporting Libraries
-- **python-dotenv**: Environment configuration
-- **pydantic**: Data validation
-- **tiktoken**: Token counting for context management
-- **markdown**: Document parsing
-- **beautifulsoup4**: HTML cleaning
+**Algorithm**:
+1. Load Entity Dictionary ([data/entities/mosar_entities.json](data/entities/mosar_entities.json))
+2. Exact string matching for known entities
+3. Calculate confidence score
+4. Route decision:
+   - Confidence >0.9 → Path A (Pure Cypher)
+   - Confidence 0.3-0.9 → Path B (Hybrid)
+   - Confidence <0.3 → Path C (Pure Vector)
 
-## Query Architecture: Hybrid Approach
-
-The system uses a **3-tier adaptive routing strategy** that automatically selects the optimal query path:
-
-### Query Routing Decision Tree
-
-```
-User Question
-    ↓
-[1] Check Entity Dictionary (Fast Lookup)
-    ├─ High Confidence Match → Pure Cypher Query (Path A)
-    ├─ Moderate Confidence → Hybrid Workflow (Path B)
-    └─ No Match → Pure Vector Search (Path C)
-```
-
-### Path A: Pure Cypher (Template-Based)
-**When**: Question contains explicit entity IDs or exact terminology
-**Example**: "Show all requirements verified by R-ICU"
-
-```python
-MATCH (c:Component {id: $component_id})<-[:VERIFIES]-(tc:TestCase)-[:VERIFIES]->(req:Requirement)
-RETURN req.id, req.statement, tc.id
-```
-
-**Advantages**: Fastest (<100ms), 100% accuracy for known entities
-
-### Path B: Hybrid (Vector → NER → Cypher → LLM)
-**When**: Question uses natural language or domain terminology
-**Example**: "어떤 하드웨어가 네트워크 통신을 담당하나요?" (What hardware handles network communication?)
-
-**5-Step Workflow**:
-
-1. **Vector Search**: Find top-k relevant text chunks
-```python
-def run_vector_search(state: GraphRAGState) -> GraphRAGState:
-    query_embedding = get_embedding(state["user_question"])
-    cypher = """
-    CALL db.index.vector.queryNodes('chunk_embeddings', $k, $embedding)
-    YIELD node, score
-    RETURN node.id AS chunk_id, node.text AS text, score
-    ORDER BY score DESC LIMIT $k
-    """
-    return {"top_k_nodes": results}
-```
-
-2. **Entity Extraction (NER)**: Extract entities from retrieved context
-```python
-def extract_entities_from_context(state: GraphRAGState) -> GraphRAGState:
-    context = "\n".join([node["text"] for node in state["top_k_nodes"]])
-    prompt = f"""Extract MOSAR entities from this text:
-    - Components (e.g., R-ICU, WM, SM)
-    - Requirements (e.g., FuncR_S110)
-    - Interfaces (e.g., CAN-BUS-1)
-
-    Text: {context}
-
-    Return JSON: {{"Component": [...], "Requirement": [...], "Interface": [...]}}
-    """
-    extracted = call_openai(prompt)
-    return {"extracted_entities": extracted}
-```
-
-3. **Contextual Cypher**: Build Cypher query using extracted entities
-```python
-def run_contextual_cypher(state: GraphRAGState) -> GraphRAGState:
-    entities = state["extracted_entities"]
-    cypher = f"""
-    MATCH (section:Section)-[:MENTIONS]->(c:Component)
-    WHERE c.id IN $component_ids
-    MATCH (c)-[:HAS_INTERFACE]->(i:Interface)
-    WHERE i.protocol = 'Ethernet' OR i.protocol = 'CAN'
-    RETURN c.id, c.name, i.protocol, i.data_rate_mbps
-    """
-    return {"graph_results": results}
-```
-
-4. **LLM Synthesis**: Generate natural language response
-```python
-def synthesize_hybrid_response(state: GraphRAGState) -> GraphRAGState:
-    prompt = f"""Question: {state['user_question']}
-
-    Retrieved Text:
-    {state['top_k_nodes']}
-
-    Graph Query Results:
-    {state['graph_results']}
-
-    Provide a comprehensive answer with citations."""
-    return {"final_answer": call_openai(prompt)}
-```
-
-### Path C: Pure Vector Search
-**When**: Exploratory questions without clear entities
-**Example**: "What are the main challenges in orbital assembly?"
-
-Uses only semantic similarity on text chunks with LLM synthesis.
-
-## Entity Dictionary: Dual Usage
-
-The `mosar_entities.json` file serves two critical purposes:
-
-### 1. Query-Time Resolution (Real-Time)
-Fast entity lookup to route queries correctly:
+**Entity Dictionary Structure**:
 ```json
 {
   "components": {
+    "R-ICU": {"id": "R-ICU", "type": "Component"},
     "Walking Manipulator": {"id": "WM", "type": "Component"},
-    "워킹 매니퓰레이터": {"id": "WM", "type": "Component"},
-    "R-ICU": {"id": "R-ICU", "type": "Component"}
+    "워킹 매니퓰레이터": {"id": "WM", "type": "Component"}  // Korean support
   },
   "requirements": {
-    "안전 요구사항": {"type": "Requirement", "filter": {"type": "SafR"}},
     "기능 요구사항": {"type": "Requirement", "filter": {"type": "FuncR"}}
   }
 }
 ```
 
-### 2. Load-Time Relationship Creation (Ingestion)
-During data loading, the Entity Dictionary pre-creates `RELATES_TO` relationships:
+### 2. Vector Search ([src/graphrag/nodes/vector_search_node.py](src/graphrag/nodes/vector_search_node.py))
+
+**Purpose**: Semantic similarity search using OpenAI embeddings
+
+**Process**:
+1. Generate query embedding (OpenAI `text-embedding-3-large`, 3072 dims)
+2. Neo4j vector search: `CALL db.index.vector.queryNodes('section_embeddings', 10, $embedding)`
+3. Filter by similarity threshold (>0.75)
+4. Return top-k sections with scores
+
+**Performance**: ~500-800ms (including OpenAI API call)
+
+### 3. Entity Extraction ([src/graphrag/nodes/ner_node.py](src/graphrag/nodes/ner_node.py))
+
+**Purpose**: Extract MOSAR-specific entities from vector search results
+
+**Methods**:
+1. **Primary**: GPT-4 with structured prompts (high accuracy)
+2. **Fallback**: spaCy NER + Entity Resolver (when OpenAI unavailable)
+
+**Extracted Entity Types**:
+- Component IDs (R-ICU, WM, OBC, cPDU)
+- Requirement IDs (FuncR_S110, SafR_A201)
+- Protocols (CAN, Ethernet, SpaceWire)
+- Modules (SM1-DMS, SM2-PWS)
+
+### 4. Cypher Generation ([src/graphrag/nodes/cypher_node.py](src/graphrag/nodes/cypher_node.py))
+
+**Two Modes**:
+
+**Template Mode** (Path A):
+- Predefined templates in [src/query/cypher_templates.py](src/query/cypher_templates.py)
+- Fast, deterministic, no LLM required
+- Example templates: `get_requirement_traceability`, `find_unverified_requirements`
+
+**Contextual Mode** (Path B):
+- Dynamic Cypher generation based on extracted entities
+- Combines vector context + graph traversal
+- Example: Find components + interfaces mentioned in top sections
+
+### 5. Response Synthesis ([src/graphrag/nodes/synthesize_node.py](src/graphrag/nodes/synthesize_node.py))
+
+**Purpose**: Generate natural language response with citations
+
+**Inputs**:
+- User question
+- Vector search results (document excerpts)
+- Graph query results (structured data)
+- Query path metadata
+
+**LLM**: GPT-4o (temperature=0.3 for consistency)
+
+**Output Format**:
+- Natural language answer
+- Citations (section IDs, requirement IDs)
+- Confidence indicators
+
+---
+
+## Development Workflows
+
+### Adding New Features
+
+#### Add New Query Template
+
+1. **Add template** to [src/query/cypher_templates.py](src/query/cypher_templates.py):
 ```python
-def _create_entity_relationships_from_requirements(self):
-    """Use Entity Dictionary to create relationships during ingestion."""
-    for req_text in requirement_statements:
-        # Check if requirement text mentions known components
-        for component_name, component_info in entity_dict["components"].items():
-            if component_name in req_text:
-                cypher = """
-                MATCH (req:Requirement {id: $req_id})
-                MATCH (c:Component {id: $component_id})
-                MERGE (req)-[:RELATES_TO]->(c)
-                """
+TEMPLATES["my_new_query"] = """
+MATCH (c:Component {id: $component_id})
+RETURN c.name, c.type
+"""
 ```
 
-**Benefit**: Reduces runtime NER dependency, improves query speed by 40-60%
+2. **Update router** in [src/query/router.py](src/query/router.py) to detect when to use it
 
-## Implementation Phases
+3. **Add test** in [tests/test_cypher_node.py](tests/test_cypher_node.py)
 
-The project follows a 4-phase implementation plan (see [PRD.md](PRD.md) for full details):
+#### Add New Entity Type
 
-### Phase 0: Environment Setup (Days 1-2)
-- Neo4j database setup with constraints and vector indexes
-- Python environment with LangGraph, spaCy models
-- Entity Dictionary creation
-
-### Phase 1: Data Ingestion (Days 3-7)
-- Parse 4 document types: SRD, PDD, DDD, Demo Procedures
-- Create Layer 1 (Document Structure) and Layer 2 (Entities)
-- Build Layer 3 (Domain System Graph)
-- Establish Layer 4 (Requirements Traceability)
-
-**Critical**: Demo Procedures parser extracts test cases with `VERIFIES` relationships
-
-### Phase 2: Basic Query (Days 8-10)
-- Implement pure Cypher template queries
-- Test basic retrieval and traceability queries
-
-### Phase 3: Hybrid Query Workflow (Days 11-14)
-- Implement 5-node LangGraph workflow (Vector → NER → Cypher → Synthesis)
-- Add Entity Dictionary query-time resolution
-- Build adaptive routing logic
-
-### Phase 4: Advanced Features (Days 15-20)
-- HITL (Human-in-the-Loop) for Text2Cypher debugging
-- Query performance optimization
-- Comprehensive testing and documentation
-
-## Key Files and Directories
-
-### Existing Files (Planning Phase)
-- **[PRD.md](PRD.md)**: Complete Product Requirements Document with implementation details
-- **[Documents/SRD/System Requirements Document_MOSAR.md](Documents/SRD/System Requirements Document_MOSAR.md)**: 227 requirements in table format
-- **[Documents/PDD/MOSAR-WP2-D2.4-SA_1.1.0-Preliminary-Design-Document.md](Documents/PDD/MOSAR-WP2-D2.4-SA_1.1.0-Preliminary-Design-Document.md)**: Preliminary design specifications
-- **[Documents/DDD/MOSAR-WP3-D3.6-SA_1.2.0-Detailed-Design-Document.md](Documents/DDD/MOSAR-WP3-D3.6-SA_1.2.0-Detailed-Design-Document.md)**: Detailed design specifications
-
-### Planned Structure (After Implementation)
+1. **Update Entity Dictionary** [data/entities/mosar_entities.json](data/entities/mosar_entities.json):
+```json
+{
+  "new_entity_type": {
+    "entity_name": {"id": "ENTITY_ID", "type": "NewType"}
+  }
+}
 ```
-ReqEng/
-├── src/
-│   ├── ingestion/
-│   │   ├── srd_parser.py          # Requirements table parser
-│   │   ├── pdd_parser.py          # Preliminary design parser
-│   │   ├── ddd_parser.py          # Detailed design parser
-│   │   ├── demo_procedure_parser.py  # Test case extraction
-│   │   └── neo4j_loader.py        # Graph database loader
-│   ├── query/
-│   │   ├── langgraph_workflow.py  # Main LangGraph workflow
-│   │   ├── cypher_templates.py    # Predefined Cypher queries
-│   │   ├── entity_resolver.py     # Entity Dictionary lookup
-│   │   └── hybrid_chain.py        # Vector → NER → Cypher chain
-│   └── utils/
-│       ├── embeddings.py          # OpenAI embedding utilities
-│       └── graph_utils.py         # Neo4j connection pool
-├── data/
-│   └── entities/
-│       └── mosar_entities.json    # Entity Dictionary (dual usage)
-├── tests/
-│   ├── test_ingestion.py
-│   └── test_query_workflow.py
-├── notebooks/
-│   └── explore_graph.ipynb        # Neo4j Browser queries
-├── .env                           # API keys, Neo4j credentials
-├── pyproject.toml                 # Dependencies
-└── README.md                      # Setup instructions
+
+2. **Update NER prompts** in [src/graphrag/nodes/ner_node.py](src/graphrag/nodes/ner_node.py) to extract new type
+
+3. **Update Cypher templates** to query new entity type
+
+4. **Add unit tests**
+
+### Running Tests
+
+```bash
+# All tests
+pytest
+
+# Specific test categories
+pytest -m unit                      # Unit tests only
+pytest -m e2e                       # End-to-end tests only
+pytest -m "not requires_openai"    # Skip tests needing OpenAI API
+
+# Single test file
+pytest tests/test_vector_search_node.py
+
+# Single test function
+pytest tests/test_e2e.py::test_question_1
+
+# With coverage
+pytest --cov=src --cov-report=html
+# View: htmlcov/index.html
+
+# Verbose output
+pytest -v
+
+# Show print statements
+pytest -s
 ```
+
+### Debugging with HITL (Human-in-the-Loop)
+
+The system includes an interactive review system ([src/graphrag/hitl.py](src/graphrag/hitl.py)):
+
+```python
+from src.graphrag.hitl import HITLReviewer
+
+reviewer = HITLReviewer()
+
+# Review entity extraction
+entities = {"Component": ["R-ICU", "WM"], "Requirement": ["FuncR_S110"]}
+approved_entities = reviewer.review_entities(entities, user_question="...")
+
+# Review generated Cypher
+cypher_query = "MATCH (c:Component {id: 'R-ICU'}) RETURN c"
+approved_query = reviewer.review_cypher(cypher_query, entities)
+
+# Review final answer
+final_answer = "R-ICU handles network communication via CAN bus..."
+approved_answer = reviewer.review_answer(final_answer, user_question)
+```
+
+**Use cases**:
+- Debugging incorrect entity extraction
+- Validating Cypher query generation
+- Quality assurance for LLM responses
+
+---
+
+## Working with Neo4j
+
+### Accessing Neo4j Browser
+
+1. Open http://localhost:7474 in browser
+2. Connect using credentials from `.env`:
+   - Bolt URL: `bolt://localhost:7687`
+   - Username: `neo4j`
+   - Password: (from `NEO4J_PASSWORD` in `.env`)
+
+### Useful Cypher Queries
+
+```cypher
+// Check database status
+CALL dbms.components() YIELD name, versions, edition;
+
+// Count nodes by label
+MATCH (n) RETURN labels(n), count(n) ORDER BY count(n) DESC;
+
+// Check vector indexes
+SHOW INDEXES YIELD name, type WHERE type = 'VECTOR';
+
+// View sample requirement with traceability
+MATCH path = (req:Requirement {id: 'FuncR_S110'})-[*1..3]-(related)
+RETURN path LIMIT 50;
+
+// Find unverified requirements
+MATCH (req:Requirement)
+WHERE NOT EXISTS { (req)<-[:VERIFIES]-(:TestCase) }
+RETURN req.id, req.type, req.statement
+LIMIT 10;
+
+// Check embeddings
+MATCH (s:Section)
+WHERE s.content_embedding IS NOT NULL
+RETURN count(s) as sections_with_embeddings;
+
+// Test vector search
+CALL db.index.vector.queryNodes(
+  'section_embeddings',
+  5,
+  [/* paste 3072-dim embedding here */]
+) YIELD node, score
+RETURN node.id, node.title, score;
+```
+
+### Resetting the Database
+
+```cypher
+// WARNING: Deletes all data
+MATCH (n) DETACH DELETE n;
+
+// Then reload data
+# python scripts/load_documents.py
+```
+
+---
+
+## Configuration
+
+### Environment Variables (.env)
+
+```bash
+# Neo4j Configuration
+NEO4J_URI=bolt://localhost:7687
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=your_password_here
+NEO4J_DATABASE=neo4j
+
+# OpenAI API
+OPENAI_API_KEY=sk-...
+OPENAI_ORG_ID=org-...  # Optional
+
+# Embeddings Configuration
+EMBEDDING_MODEL=text-embedding-3-large
+EMBEDDING_DIMENSION=3072
+
+# Query Configuration
+VECTOR_SEARCH_TOP_K=10
+VECTOR_SIMILARITY_THRESHOLD=0.75
+CYPHER_TIMEOUT_MS=5000
+
+# LLM Configuration
+LLM_MODEL=gpt-4o
+LLM_TEMPERATURE=0.3
+LLM_MAX_TOKENS=2000
+
+# LangSmith Tracing (Optional - for debugging)
+LANGCHAIN_TRACING_V2=true
+LANGCHAIN_API_KEY=ls-...
+LANGCHAIN_PROJECT=mosar-graphrag
+
+# Application Settings
+LOG_LEVEL=INFO
+CACHE_ENABLED=true
+HITL_ENABLED=false  # Human-in-the-loop review
+```
+
+### Dependencies (pyproject.toml)
+
+**Core**:
+- `langgraph ^0.2.16` - Workflow orchestration
+- `neo4j ^5.14.0` - Graph database driver
+- `openai ^1.50.0` - LLM and embeddings
+- `langchain ^0.3.0`, `langchain-openai ^0.2.0`, `langchain-core ^0.3.0`
+
+**NLP**:
+- `spacy ^3.7.0`, `spacy-transformers ^1.3.0` - NER
+- `sentence-transformers ^2.3.0` - Alternative embeddings
+
+**Utilities**:
+- `pydantic ^2.5.0` - Data validation
+- `python-dotenv ^1.0.0` - Environment management
+- `rich ^13.7.0` - CLI formatting
+- `fuzzywuzzy ^0.18.0` - Fuzzy entity matching
+
+**Dev/Testing**:
+- `pytest ^8.0.0`, `pytest-cov ^4.1.0`, `pytest-asyncio ^0.23.0`
+- `ruff ^0.1.0` - Linting
+- `jupyter ^1.0.0` - Notebooks
+- `langsmith ^0.1.0` - Trace debugging
+
+---
 
 ## MOSAR Domain Knowledge
 
-### Key Components
-- **R-ICU**: Reduced Instrument Control Unit (Zynq UltraScale+ MPSoC, 0.65kg, 10W avg)
-- **OBC**: On-Board Computer (R5 processor for real-time tasks)
-- **cPDU**: Power Distribution Unit
-- **HOTDOCK**: Hot-swappable docking interface
-- **WM**: Walking Manipulator (mobility on spacecraft surface)
-- **SM**: Service Module (contains R-ICU, cPDU, HOTDOCK)
+### Key MOSAR Components
 
-### Network Architecture
-- **CAN Bus**: 1 Mbps, real-time communication (SafR requirements)
-- **Ethernet**: 100 Mbps, high-bandwidth data (science payloads)
-- **SpaceWire**: Backup protocol for critical data
+**R-ICU** (Reduced Instrument Control Unit)
+- Hardware: Zynq UltraScale+ MPSoC
+- Mass: 0.65 kg
+- Power: 10W avg, 15W peak
+- Purpose: Central control unit for modules
+
+**WM** (Walking Manipulator)
+- Purpose: Mobility on spacecraft surface
+- Interfaces: CAN bus, Ethernet
+
+**SM** (Service Module)
+- Variants: SM1-DMS, SM2-PWS, SM3-BAT, SM4-THS
+- Contains: R-ICU, cPDU, HOTDOCK
+
+**OBC** (On-Board Computer)
+- Processor: R5 (real-time) + A53 (application)
+- OS: FreeRTOS (R5), Linux (A53)
+
+**cPDU** (Power Distribution Unit)
+- Purpose: Power management and distribution
+
+**HOTDOCK** (Hot-Docking Interface)
+- Purpose: Hot-swappable module connections
+
+### Network Protocols
+
+**CAN Bus**
+- Speed: 1 Mbps
+- Purpose: Real-time communication
+- Use: Safety-critical data
+
+**Ethernet**
+- Speed: 100 Mbps
+- Purpose: High-bandwidth data transfer
+- Use: Science payloads, telemetry
+
+**SpaceWire**
+- Purpose: Backup protocol for critical data
 
 ### Requirements Categories
+
 - **FuncR**: Functional Requirements (110 total)
 - **SafR**: Safety Requirements (45 total)
 - **PerfR**: Performance Requirements (38 total)
 - **IntR**: Interface Requirements (34 total)
+- **DesR**: Design Requirements
 
-### Design Evolution
-- **PDD → DDD Tracking**: Each `DesignConcept` node has a `REFINED_TO` relationship showing:
-  - What changed from preliminary to detailed design
-  - Completeness percentage
-  - Open issues for next revision
+### Verification Methods
 
-## Common Query Patterns
+- **Testing**: Physical or simulation tests
+- **Analysis**: Mathematical/computational verification
+- **Review of Design**: Design review and inspection
 
-### 1. Requirements Traceability
-"Show the full traceability chain for requirement FuncR_S110"
-```cypher
-MATCH path = (req:Requirement {id: 'FuncR_S110'})-[:PRELIMINARY_DESIGN]->
-             (pdd:DesignConcept)-[:REFINED_TO]->(ddd:DetailedDesign)-[:IMPLEMENTED_BY]->
-             (c:Component)<-[:VERIFIES]-(tc:TestCase)
-RETURN path
-```
-
-### 2. Unverified Requirements
-"Which requirements don't have test cases yet?"
-```cypher
-MATCH (req:Requirement)
-WHERE NOT EXISTS { (req)<-[:VERIFIES]-(:TestCase) }
-RETURN req.id, req.type, req.statement
-ORDER BY req.type, req.id
-```
-
-### 3. Component Dependencies
-"What components does R-ICU interact with?"
-```cypher
-MATCH (c:Component {id: 'R-ICU'})-[:HAS_INTERFACE]->(i:Interface)<-[:HAS_INTERFACE]-(other:Component)
-RETURN other.id, other.name, i.protocol, i.data_rate_mbps
-```
-
-### 4. Design Evolution
-"How did the network architecture evolve from PDD to DDD?"
-```cypher
-MATCH (pdd:Section {id: 'PDD-3.2'})-[:EVOLVED_TO {category: 'network'}]->(ddd:Section {id: 'DDD-4.1'})
-MATCH (pdd)-[:MENTIONS]->(concept:DesignConcept)-[:REFINED_TO]->(detail:DetailedDesign)
-RETURN pdd.title, ddd.title, concept.decision, detail.final_choice
-```
-
-### 5. Hybrid Natural Language Query
-"서비스 모듈에서 실시간 통신을 어떻게 처리하나요?" (How does the Service Module handle real-time communication?)
-
-**Workflow**:
-1. Vector search finds relevant sections about SM and real-time communication
-2. NER extracts entities: `Component:SM`, `Protocol:CAN`
-3. Cypher query:
-```cypher
-MATCH (sm:SpacecraftModule {id: 'SM'})-[:CONTAINS]->(c:Component)-[:HAS_INTERFACE]->(i:Interface)
-WHERE i.protocol = 'CAN'
-MATCH (c)-[:RUNS_ON]->(task:SoftwareTask)
-WHERE task.realtime = true
-RETURN c.name, i.data_rate_mbps, task.name, task.priority
-```
-4. LLM synthesizes: "The Service Module uses the R-ICU component connected to a 1 Mbps CAN bus for real-time communication. The OBC runs real-time tasks on the R5 processor with priorities managed by FreeRTOS..."
-
-## Development Guidelines
-
-### Adding New Document Types
-1. Create parser in `src/ingestion/` following the pattern in `srd_parser.py`
-2. Define document-specific node types and relationships
-3. Update Entity Dictionary with new domain terms
-4. Add vector indexes if full-text search needed
-
-### Extending the Graph Schema
-1. Update constraints in Phase 0 setup script
-2. Document new node properties in this CLAUDE.md file
-3. Create migration script if modifying existing nodes
-4. Update Cypher templates if query patterns change
-
-### Testing Queries
-1. Use `notebooks/explore_graph.ipynb` for interactive Cypher testing
-2. Test all 3 query paths (Cypher, Hybrid, Vector) for each question type
-3. Verify Entity Dictionary coverage (aim for >80% of domain terms)
-4. Check response time (<2s target) and accuracy (>90% target)
-
-### Performance Optimization
-- **Vector Index Tuning**: Adjust `m` and `efConstruction` for HNSW algorithm
-- **Cypher Optimization**: Use `EXPLAIN` and `PROFILE` for slow queries
-- **Entity Dictionary Expansion**: Add frequently missed terms from NER logs
-- **Caching**: Cache frequently accessed subgraphs (e.g., component hierarchy)
+---
 
 ## Troubleshooting
 
-### "Entity not found" errors
-- Check Entity Dictionary coverage in `mosar_entities.json`
-- Review NER extraction quality (use HITL to debug)
-- Verify entity IDs match between documents and graph
+### Common Issues
 
-### Slow query performance
-- Check if vector index is being used (`PROFILE` in Neo4j Browser)
-- Reduce top-k parameter for vector search (try k=5 instead of k=10)
-- Use Entity Dictionary more aggressively to skip vector search
+#### "Neo4j connection failed"
+**Cause**: Neo4j not running or wrong credentials
+**Fix**:
+```bash
+# Check if Neo4j is running
+docker ps | grep neo4j  # If using Docker
+# OR check Neo4j Desktop
 
-### Incorrect traceability chains
-- Verify parsers correctly extract requirement IDs (regex patterns)
-- Check `VERIFIES` relationships created by Demo Procedures parser
-- Validate PDD→DDD `REFINED_TO` relationships for completeness
+# Verify credentials in .env match Neo4j
+# Test connection:
+python scripts/check_neo4j_status.py
+```
+
+#### "OpenAI API error: Rate limit exceeded"
+**Cause**: Too many API calls
+**Fix**:
+- Wait 1 minute (rate limit resets)
+- Upgrade OpenAI plan for higher limits
+- Use caching to reduce calls (already implemented)
+
+#### "No vector index found"
+**Cause**: Database schema not initialized
+**Fix**:
+```bash
+python src/neo4j_schema/create_schema.py
+# Verify:
+python scripts/check_neo4j_status.py
+```
+
+#### "ModuleNotFoundError: No module named 'src'"
+**Cause**: Python path not set correctly
+**Fix**:
+```bash
+# Run from repository root
+cd /path/to/ReqEng
+
+# OR set PYTHONPATH
+export PYTHONPATH="${PYTHONPATH}:$(pwd)"
+```
+
+#### "spaCy model not found"
+**Cause**: spaCy transformer model not downloaded
+**Fix**:
+```bash
+python -m spacy download en_core_web_trf
+```
+
+#### Tests fail with "requires_neo4j" or "requires_openai"
+**Cause**: Missing dependencies for integration tests
+**Fix**:
+```bash
+# Skip these tests if dependencies unavailable
+pytest -m "not requires_neo4j and not requires_openai"
+
+# OR set up required services
+```
+
+### Performance Issues
+
+#### "Queries are slow (>5 seconds)"
+**Diagnose**:
+1. Check Neo4j indexes: `SHOW INDEXES;`
+2. Profile Cypher query: `PROFILE [your query]`
+3. Check OpenAI API latency
+4. Enable caching in `.env`: `CACHE_ENABLED=true`
+
+**Optimize**:
+- Reduce `VECTOR_SEARCH_TOP_K` (default: 10 → try 5)
+- Increase `VECTOR_SIMILARITY_THRESHOLD` (default: 0.75 → try 0.80)
+- Use Path A (Pure Cypher) when possible
+
+#### "Out of memory errors"
+**Cause**: Large document loading or vector operations
+**Fix**:
+- Process documents in batches (see [src/ingestion/neo4j_loader.py](src/ingestion/neo4j_loader.py))
+- Increase Docker memory limit (if using Docker)
+- Use text chunking for large sections
+
+---
+
+## Testing Strategy
+
+### Test Categories
+
+**Unit Tests** ([tests/test_*_node.py](tests/))
+- Test individual nodes in isolation
+- Mock external dependencies (Neo4j, OpenAI)
+- Fast execution (<1s per test)
+- Run frequently during development
+
+**Integration Tests** (marked with `@pytest.mark.integration`)
+- Test interactions between components
+- Use real Neo4j database (test data)
+- Slower execution (2-5s per test)
+
+**End-to-End Tests** ([tests/test_e2e.py](tests/test_e2e.py))
+- Test complete workflows with production data
+- Require Neo4j + OpenAI API
+- Slow execution (5-20s per test)
+- 5 key questions covering all paths
+
+**Performance Tests** ([notebooks/benchmark.ipynb](notebooks/benchmark.ipynb))
+- Measure response times
+- Validate against targets (<500ms, <2000ms)
+- Generate visualizations
+
+### Success Criteria
+
+✅ **Query Response Time**
+- Pure Cypher: <500ms average
+- Hybrid: <2000ms average
+- Pure Vector: <2000ms average
+
+✅ **Accuracy**
+- Entity detection: >90% precision
+- E2E test pass rate: 100% (5/5 questions)
+
+✅ **Test Coverage**
+- Line coverage: >80%
+- Branch coverage: >70%
+
+✅ **Data Completeness**
+- Requirements loaded: 227/227 (100%)
+- Embeddings generated: 500+ sections
+- Test cases linked: 50+ verified
+
+---
+
+## Architecture Diagrams
+
+### Data Flow: Query Execution
+
+```
+User Question
+     ↓
+[Router: Entity Detection & Path Selection]
+     ↓
+┌────┴────┬─────────┬────────┐
+│  Path A │ Path B  │ Path C │
+│         │         │        │
+│ Template│ Vector  │ Vector │
+│ Cypher  │ Search  │ Search │
+│    ↓    │    ↓    │    ↓   │
+│ Execute │  NER    │  LLM   │
+│    ↓    │  Extr.  │ Synth. │
+│ Format  │    ↓    │    ↓   │
+│         │Context. │        │
+│         │ Cypher  │        │
+│         │    ↓    │        │
+│         │  LLM    │        │
+│         │ Synth.  │        │
+└────┬────┴─────────┴────────┘
+     ↓
+Final Answer + Citations
+```
+
+### Data Flow: Document Ingestion
+
+```
+Source Documents
+(SRD, PDD, DDD, Demo)
+     ↓
+[Document Parsers]
+(srd_parser.py, design_doc_parser.py, demo_procedure_parser.py)
+     ↓
+Structured Data
+(Requirements, Sections, TestCases)
+     ↓
+[Embedder]
+(OpenAI text-embedding-3-large)
+     ↓
+Data + Embeddings (3072-dim vectors)
+     ↓
+[Neo4j Loader]
+(Bulk UNWIND operations)
+     ↓
+Neo4j Graph Database
+(4-Layer Model)
+```
+
+---
 
 ## References
 
+### Internal Documentation
+- [PRD.md](PRD.md) - Product Requirements Document (complete implementation plan)
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Detailed architecture documentation
+- [QUICKSTART.md](QUICKSTART.md) - Quick start guide for development
+- [PHASE*_COMPLETE.md](.) - Phase completion reports with metrics
+
+### External Resources
 - **GraphRAG Concepts**: https://graphrag.com/concepts/intro-to-graphrag/
 - **LangGraph Documentation**: https://langchain-ai.github.io/langgraph/
 - **Neo4j Vector Search**: https://neo4j.com/docs/cypher-manual/current/indexes-for-vector-search/
 - **V-Model Traceability**: ISO/IEC/IEEE 15288:2015 Systems Engineering
 
-## Future Enhancements
-
-1. **Multi-hop Reasoning**: Implement graph traversal for complex questions requiring 3+ hops
-2. **Temporal Queries**: Track design changes over time with version-aware queries
-3. **Impact Analysis**: "If we change Component X, what requirements are affected?"
-4. **Auto-generated Test Cases**: Suggest test cases for unverified requirements
-5. **Cross-project Traceability**: Link MOSAR to related ESA/JAXA missions
+### Technology Documentation
+- LangGraph: Stateful workflow orchestration
+- Neo4j: Graph database + HNSW vector indexes
+- OpenAI Embeddings: text-embedding-3-large (3072 dimensions)
+- spaCy: Named Entity Recognition
 
 ---
 
-**Status**: Planning phase complete. Implementation ready to begin with Phase 0.
+## Project History
 
-**Last Updated**: 2025-10-26
+**Phase 0** (Days 1-2): Environment setup, Neo4j schema, Entity Dictionary
+**Phase 1** (Days 3-7): Document parsers, data ingestion, embeddings generation
+**Phase 2** (Days 8-10): Basic query templates, Neo4j integration
+**Phase 3** (Days 11-14): LangGraph workflow, hybrid query pipeline, CLI
+**Phase 4** (Days 15-20): Testing (50+ unit tests, 5 E2E tests), benchmarking, HITL system
 
-**Contact**: See [PRD.md](PRD.md) for detailed implementation schedule and acceptance criteria.
+**Status**: ✅ All phases complete, production-ready
+
+---
+
+**Last Updated**: 2025-10-27
+**Version**: 1.0 (Production)
+**Maintainer**: MOSAR GraphRAG Team

@@ -5,11 +5,17 @@ Implements adaptive routing with 3 paths:
 - Path A: Pure Cypher (high confidence entity match)
 - Path B: Hybrid (vector + NER + Cypher)
 - Path C: Pure Vector (exploratory)
+
+Features:
+- Text2Cypher (LLM-based Cypher generation)
+- Streaming responses (real-time token streaming)
+- HITL (Human-in-the-Loop) review
 """
 
 import logging
+import os
 import time
-from typing import Dict, Any
+from typing import Dict, Any, Optional, Generator
 from langgraph.graph import StateGraph, END
 
 from src.graphrag.state import GraphRAGState
@@ -20,6 +26,10 @@ from src.graphrag.nodes import (
     run_contextual_cypher,
     run_template_cypher,
     synthesize_response
+)
+from src.graphrag.nodes.synthesize_streaming_node import (
+    synthesize_response_streaming,
+    stream_synthesis
 )
 
 logger = logging.getLogger(__name__)
@@ -257,6 +267,125 @@ class GraphRAGWorkflow:
                     "error": str(e),
                     "processing_time_ms": (time.time() - start_time) * 1000
                 }
+            }
+
+    def query_stream(
+        self,
+        user_question: str,
+        session_id: Optional[str] = None,
+        user_id: Optional[str] = None
+    ) -> Generator[Dict[str, Any], None, None]:
+        """
+        Execute GraphRAG query with streaming response.
+
+        Args:
+            user_question: User's natural language question
+            session_id: Optional session identifier
+            user_id: Optional user identifier
+
+        Yields:
+            Dicts with:
+            - {"type": "status", "message": "..."}  # Status updates
+            - {"type": "chunk", "content": "..."}   # Answer chunks
+            - {"type": "metadata", "data": {...}}   # Final metadata
+        """
+        logger.info(f"Processing streaming query: {user_question}")
+        start_time = time.time()
+
+        try:
+            # Step 1: Route query
+            yield {"type": "status", "message": "Routing query..."}
+            language = self._detect_language(user_question)
+            query_path, routing_info = self.router.route(user_question)
+
+            yield {
+                "type": "status",
+                "message": f"Path selected: {query_path.value} (confidence={routing_info['confidence']:.2f})"
+            }
+
+            # Step 2: Execute retrieval (vector search + Cypher)
+            # Build state manually for streaming
+            state = {
+                "user_question": user_question,
+                "language": language,
+                "query_path": query_path,
+                "routing_confidence": routing_info["confidence"],
+                "matched_entities": routing_info["matched_entities"]
+            }
+
+            # Run vector search if needed
+            if query_path in [QueryPath.HYBRID, QueryPath.PURE_VECTOR]:
+                yield {"type": "status", "message": "Searching documents..."}
+                state_obj = GraphRAGState(**state)
+                state_obj = run_vector_search(state_obj)
+                state.update(state_obj)
+
+                # Extract entities for hybrid
+                if query_path == QueryPath.HYBRID:
+                    yield {"type": "status", "message": "Extracting entities..."}
+                    state_obj = extract_entities_from_context(state_obj)
+                    state.update(state_obj)
+
+                    # Run contextual Cypher
+                    yield {"type": "status", "message": "Querying knowledge graph..."}
+                    state_obj = run_contextual_cypher(state_obj)
+                    state.update(state_obj)
+
+            # Run template Cypher for pure Cypher path
+            elif query_path == QueryPath.PURE_CYPHER:
+                yield {"type": "status", "message": "Querying knowledge graph..."}
+                state_obj = GraphRAGState(**state)
+                state_obj = run_template_cypher(state_obj)
+                state.update(state_obj)
+
+            # Step 3: Stream synthesis
+            yield {"type": "status", "message": "Generating answer..."}
+
+            # Gather context for streaming
+            context = {
+                "vector_results": state.get("top_k_sections", []),
+                "graph_results": state.get("graph_results", []),
+                "cypher_query": state.get("cypher_query"),
+                "extracted_entities": state.get("extracted_entities", {}),
+                "matched_entities": state.get("matched_entities", {}),
+                "query_generation_method": state.get("query_generation_method")
+            }
+
+            # Stream answer chunks
+            citations = []
+            for chunk in stream_synthesis(user_question, context, language, query_path):
+                if isinstance(chunk, dict):
+                    # Metadata (citations)
+                    citations = chunk.get("citations", [])
+                else:
+                    # Text chunk
+                    yield {"type": "chunk", "content": chunk}
+
+            # Step 4: Send final metadata
+            processing_time_ms = (time.time() - start_time) * 1000
+
+            yield {
+                "type": "metadata",
+                "data": {
+                    "citations": citations,
+                    "query_path": query_path.value,
+                    "routing_confidence": routing_info["confidence"],
+                    "matched_entities": routing_info["matched_entities"],
+                    "extracted_entities": state.get("extracted_entities"),
+                    "cypher_query": state.get("cypher_query"),
+                    "query_generation_method": state.get("query_generation_method"),
+                    "processing_time_ms": processing_time_ms,
+                    "language": language
+                }
+            }
+
+            logger.info(f"Streaming query completed in {processing_time_ms:.0f}ms")
+
+        except Exception as e:
+            logger.error(f"Streaming workflow failed: {e}", exc_info=True)
+            yield {
+                "type": "error",
+                "message": f"Error processing query: {str(e)}"
             }
 
 

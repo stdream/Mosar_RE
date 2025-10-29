@@ -8,7 +8,8 @@
       "Bash(py -3.11 -m poetry add:*)",
       "Bash(py:*)",
       "Bash(timeout 90 py -3.11 -m poetry run python:*)",
-      "Bash(set:*)"
+      "Bash(set:*)",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []
