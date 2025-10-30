@@ -15,7 +15,8 @@
       "Bash(python -c:*)",
       "Bash(poetry run python:*)",
       "Read(//c/Users/stdre/Downloads/**)",
-      "Bash(git commit:*)"
+      "Bash(git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []
