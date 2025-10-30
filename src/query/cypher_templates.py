@@ -249,7 +249,153 @@ class CypherTemplates:
         """
 
     # ===============================
-    # 5. Document Section Queries
+    # 5. SpacecraftModule Queries
+    # ===============================
+
+    @staticmethod
+    def get_module_details(module_id: str) -> str:
+        """
+        Get details of a spacecraft module including components and requirements.
+
+        Args:
+            module_id: Module ID (e.g., 'SM', 'SM1-DMS')
+
+        Returns:
+            Cypher query string
+        """
+        return f"""
+        MATCH (sm:SpacecraftModule {{id: '{module_id}'}})
+        OPTIONAL MATCH (sm)-[:CONTAINS]->(c:Component)
+        OPTIONAL MATCH (c)<-[:RELATES_TO]-(req:Requirement)
+        OPTIONAL MATCH (c)-[:HAS_INTERFACE]->(i:Interface)
+        RETURN
+            sm.id AS module_id,
+            sm.name AS module_name,
+            sm.description AS description,
+            collect(DISTINCT c.id) AS components,
+            collect(DISTINCT c.name) AS component_names,
+            collect(DISTINCT req.id) AS related_requirements,
+            collect(DISTINCT i.protocol) AS interface_protocols
+        """
+
+    @staticmethod
+    def get_all_modules() -> str:
+        """
+        Get all spacecraft modules with component counts.
+
+        Returns:
+            Cypher query string
+        """
+        return """
+        MATCH (sm:SpacecraftModule)
+        OPTIONAL MATCH (sm)-[:CONTAINS]->(c:Component)
+        RETURN
+            sm.id AS module_id,
+            sm.name AS module_name,
+            count(DISTINCT c) AS component_count,
+            collect(DISTINCT c.id) AS components
+        ORDER BY component_count DESC
+        """
+
+    # ===============================
+    # 6. Scenario Queries
+    # ===============================
+
+    @staticmethod
+    def get_scenario_details(scenario_id: str) -> str:
+        """
+        Get details of a mission scenario.
+
+        Args:
+            scenario_id: Scenario ID (e.g., 'S1', 'S2')
+
+        Returns:
+            Cypher query string
+        """
+        return f"""
+        MATCH (s:Scenario {{id: '{scenario_id}'}})
+        OPTIONAL MATCH (s)-[:INVOLVES]->(c:Component)
+        OPTIONAL MATCH (s)-[:REQUIRES]->(req:Requirement)
+        OPTIONAL MATCH (s)<-[:DEFINED_IN]-(section:Section)<-[:HAS_SECTION]-(doc:Document)
+        RETURN
+            s.id AS scenario_id,
+            s.name AS scenario_name,
+            s.description AS description,
+            collect(DISTINCT c.id) AS involved_components,
+            collect(DISTINCT req.id) AS required_requirements,
+            collect(DISTINCT {{doc: doc.title, section: section.title}}) AS documentation
+        """
+
+    @staticmethod
+    def get_all_scenarios() -> str:
+        """
+        Get all mission scenarios.
+
+        Returns:
+            Cypher query string
+        """
+        return """
+        MATCH (s:Scenario)
+        OPTIONAL MATCH (s)-[:INVOLVES]->(c:Component)
+        RETURN
+            s.id AS scenario_id,
+            s.name AS scenario_name,
+            s.description AS description,
+            count(DISTINCT c) AS component_count
+        ORDER BY s.id
+        """
+
+    # ===============================
+    # 7. Organization Queries
+    # ===============================
+
+    @staticmethod
+    def get_organization_projects(org_id: str) -> str:
+        """
+        Get projects and contributions by an organization.
+
+        Args:
+            org_id: Organization ID (e.g., 'SPACEAPPS', 'TAS-UK')
+
+        Returns:
+            Cypher query string
+        """
+        return f"""
+        MATCH (org:Organization {{id: '{org_id}'}})
+        OPTIONAL MATCH (org)-[:DEVELOPS]->(c:Component)
+        OPTIONAL MATCH (org)-[:CONTRIBUTES_TO]->(proj:Project)
+        OPTIONAL MATCH (org)<-[:WORKS_FOR]-(p:Person)
+        RETURN
+            org.id AS organization_id,
+            org.name AS organization_name,
+            org.country AS country,
+            collect(DISTINCT c.id) AS developed_components,
+            collect(DISTINCT proj.name) AS projects,
+            collect(DISTINCT p.name) AS team_members
+        """
+
+    @staticmethod
+    def get_all_organizations() -> str:
+        """
+        Get all organizations with component counts.
+
+        Returns:
+            Cypher query string
+        """
+        return """
+        MATCH (org:Organization)
+        OPTIONAL MATCH (org)-[:DEVELOPS]->(c:Component)
+        RETURN
+            org.id AS organization_id,
+            org.name AS organization_name,
+            org.country AS country,
+            count(DISTINCT c) AS component_count,
+            collect(DISTINCT c.id) AS components
+        ORDER BY component_count DESC
+        """
+
+    # ===============================
+    # 8. Document Section Queries
     # ===============================
 
     @staticmethod
@@ -304,7 +450,7 @@ class CypherTemplates:
         """
 
     # ===============================
-    # 6. Statistics and Summaries
+    # 9. Statistics and Summaries
     # ===============================
 
     @staticmethod

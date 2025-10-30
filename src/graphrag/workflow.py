@@ -88,8 +88,15 @@ class GraphRAGWorkflow:
             }
         )
 
-        # Path A: Pure Cypher → Synthesize → END
-        workflow.add_edge("template_cypher", "synthesize")
+        # Path A: Pure Cypher → Synthesize OR Fallback to Hybrid
+        workflow.add_conditional_edges(
+            "template_cypher",
+            self._template_cypher_decision,
+            {
+                "success": "synthesize",
+                "fallback_to_hybrid": "vector_search"
+            }
+        )
 
         # Path B: Vector → NER → Contextual Cypher → Synthesize
         workflow.add_conditional_edges(
@@ -155,6 +162,37 @@ class GraphRAGWorkflow:
             return "path_b"
         else:  # PURE_VECTOR
             return "path_c"
+
+    def _template_cypher_decision(self, state: GraphRAGState) -> str:
+        """
+        Conditional edge: Check if template Cypher succeeded or needs fallback.
+
+        Args:
+            state: Current state
+
+        Returns:
+            "success" if template executed successfully
+            "fallback_to_hybrid" if template not found or failed
+        """
+        # Check if template selection failed
+        if state.get("template_selection_error"):
+            logger.warning(
+                f"Template selection failed: {state['template_selection_error']}. "
+                "Falling back to Hybrid path."
+            )
+            state["query_path"] = QueryPath.HYBRID  # Update path
+            state["fallback_reason"] = state["template_selection_error"]
+            return "fallback_to_hybrid"
+
+        # Check if query was generated but execution failed
+        if state.get("cypher_query") is None or not state.get("graph_results"):
+            logger.warning("Template Cypher produced no results. Falling back to Hybrid path.")
+            state["query_path"] = QueryPath.HYBRID
+            state["fallback_reason"] = "No results from template query"
+            return "fallback_to_hybrid"
+
+        logger.info("✓ Template Cypher succeeded, proceeding to synthesis")
+        return "success"
 
     def _after_vector_decision(self, state: GraphRAGState) -> str:
         """
@@ -253,7 +291,12 @@ class GraphRAGWorkflow:
                     "cypher_query": final_state.get("cypher_query"),
                     "processing_time_ms": processing_time_ms,
                     "language": final_state["language"],
-                    "error": final_state.get("error")
+                    "error": final_state.get("error"),
+                    "query_generation_method": final_state.get("query_generation_method"),
+                    "template_selection_error": final_state.get("template_selection_error"),
+                    "fallback_reason": final_state.get("fallback_reason"),
+                    "template_entity": final_state.get("template_entity"),
+                    "graph_results": final_state.get("graph_results", [])
                 }
             }
 
@@ -374,6 +417,10 @@ class GraphRAGWorkflow:
                     "extracted_entities": state.get("extracted_entities"),
                     "cypher_query": state.get("cypher_query"),
                     "query_generation_method": state.get("query_generation_method"),
+                    "template_selection_error": state.get("template_selection_error"),
+                    "fallback_reason": state.get("fallback_reason"),
+                    "template_entity": state.get("template_entity"),
+                    "graph_results": state.get("graph_results", []),
                     "processing_time_ms": processing_time_ms,
                     "language": language
                 }

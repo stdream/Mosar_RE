@@ -8,13 +8,25 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**IMPLEMENTATION COMPLETE** ✅ (All Phases 0-4)
+**Version**: 1.1.0 ✅ **PRODUCTION READY**
+
+**Implementation Complete**:
 - Production-ready GraphRAG system for spacecraft requirements engineering
-- Comprehensive test suite with 80%+ coverage
+- 7 entity types supported (Requirement, Component, TestCase, Protocol, SpacecraftModule, Scenario, Organization)
+- Comprehensive test suite with 85% coverage
 - Full V-Model traceability for 227 requirements
 - Response times: Pure Cypher <500ms, Hybrid <2000ms
+- Streamlit Web UI with real-time streaming
 
-**Last Updated**: 2025-10-27
+**Recent Changes** (v1.1.0 - 2025-10-30):
+- ✅ Query Path Routing bugfix (Protocol queries now work)
+- ✅ Graceful fallback mechanism (PURE_CYPHER → HYBRID)
+- ✅ Enhanced UI error messages
+- ✅ Documentation cleanup (removed 14 intermediate docs)
+
+**See Also**: [CHANGELOG.md](CHANGELOG.md) for complete version history
+
+**Last Updated**: 2025-10-30
 
 ## Quick Reference
 
@@ -45,11 +57,13 @@ python scripts/test_workflow.py       # Test LangGraph workflow
 python scripts/test_environment.py    # Verify environment setup
 
 # Running the System
+poetry run streamlit run streamlit_app.py  # Web UI (recommended)
 python src/graphrag/app.py            # Interactive CLI
 python scripts/demo_cli.py            # Non-interactive demo
 
 # Neo4j
-# Access Neo4j Browser at http://localhost:7474
+# Access Neo4j Aura at https://console.neo4j.io
+# Or Neo4j Browser at http://localhost:7474 (if local)
 # Credentials in .env file
 ```
 

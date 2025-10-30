@@ -9,7 +9,12 @@
       "Bash(py:*)",
       "Bash(timeout 90 py -3.11 -m poetry run python:*)",
       "Bash(set:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(pip install:*)",
+      "Bash(findstr:*)",
+      "Bash(python -c:*)",
+      "Bash(poetry run python:*)",
+      "Read(//c/Users/stdre/Downloads/**)"
     ],
     "deny": [],
     "ask": []

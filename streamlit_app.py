@@ -341,8 +341,29 @@ def display_result(result: Dict[str, Any]):
     with tab3:
         if metadata.get("cypher_query"):
             st.code(metadata["cypher_query"], language="cypher")
+
+            # Show query generation method
+            if metadata.get("query_generation_method"):
+                method = metadata["query_generation_method"]
+                if method.startswith("template:"):
+                    entity_type = method.split(":")[1]
+                    st.success(f"✓ Generated using template for {entity_type}")
+                elif method == "text2cypher":
+                    st.success("✓ Generated using Text2Cypher (LLM)")
+                elif method == "contextual":
+                    st.success("✓ Generated using contextual pattern matching")
         else:
-            st.info("No Cypher query generated (Pure Vector path)")
+            # Check why no Cypher was generated
+            if metadata.get("template_selection_error"):
+                st.warning(f"⚠️ Template not available: {metadata['template_selection_error']}")
+                if metadata.get("fallback_reason"):
+                    st.info(f"→ Fallback strategy: {metadata['fallback_reason']}")
+            elif metadata.get("query_path") == "PURE_VECTOR":
+                st.info("ℹ️ Pure vector search path (no graph query needed)")
+            elif metadata.get("fallback_reason"):
+                st.warning(f"⚠️ Fallback triggered: {metadata['fallback_reason']}")
+            else:
+                st.info("ℹ️ No Cypher query generated for this query path")
 
     with tab4:
         col1, col2, col3 = st.columns(3)

@@ -316,18 +316,29 @@ High Conf.  Medium Conf.  Low Conf.   No Match
 ### Path A: Pure Cypher (Template-Based)
 
 **When**: Question contains explicit entity IDs or exact terminology
-**Example**: "FuncR_S110을 구현한 컴포넌트는?"
+**Example**: "FuncR_S110을 구현한 컴포넌트는?", "What requirements use CAN protocol?"
 
 **Workflow**:
 1. Entity Dictionary lookup → High confidence match
-2. Select template from `cypher_templates.yaml`
+2. Select template via **ENTITY_TYPE_CONFIG** (configuration-driven)
 3. Execute parameterized Cypher query
 4. Format results (no LLM synthesis needed)
+5. **Graceful fallback**: If template not found, automatically switches to Hybrid path
+
+**Supported Entity Types** (2025-10-30 Update):
+- ✅ **Requirement** (FuncR_*, SafR_*, PerfR_*, IntR_*)
+- ✅ **Component** (R-ICU, WM, OBC-S, etc.)
+- ✅ **TestCase** (CT-A-1, CT-B-2, etc.)
+- ✅ **Protocol** (CAN, Ethernet, SpaceWire, RMAP)
+- ✅ **SpacecraftModule** (SM, SM1-DMS, SM2-PWS, etc.)
+- ✅ **Scenario** (S1, S2, S3)
+- ✅ **Organization** (SPACEAPPS, TAS-UK, GMV, DLR)
 
 **Advantages**:
 - **Fastest**: <500ms (no embedding, no LLM)
 - **Deterministic**: 100% accuracy for known entities
 - **Cost-effective**: No OpenAI API calls
+- **Extensible**: Easy to add new entity types via config
 
 **Example**:
 ```python

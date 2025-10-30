@@ -4,16 +4,17 @@ A Graph-based Retrieval Augmented Generation (GraphRAG) system for the MOSAR (Mo
 
 ## Project Status
 
-**Phase 0-6**: ✅ **COMPLETE** (Production Ready)
-- Phase 0: Environment Setup ✅
-- Phase 1: Graph Schema ✅
-- Phase 2: Data Loading ✅
-- Phase 3: LangGraph Workflow ✅
-- Phase 4: Testing & Validation ✅
-- **Phase 5**: Advanced Features (Text2Cypher + Streaming) ✅ **NEW**
-- **Phase 6**: Web UI (Streamlit) ✅ **NEW**
+**Version**: 1.1.0 ✅ **PRODUCTION READY**
 
-**Try it now**: `streamlit run streamlit_app.py`
+**Latest Updates** (2025-10-30):
+- ✅ Query Path Routing Enhanced (7 entity types supported)
+- ✅ Protocol, SpacecraftModule, Scenario, Organization queries enabled
+- ✅ Graceful fallback mechanism (PURE_CYPHER → HYBRID)
+- ✅ Improved UI error messages
+
+**Try it now**: `poetry run streamlit run streamlit_app.py`
+
+See [CHANGELOG.md](CHANGELOG.md) for detailed release notes.
 
 ## Overview
 
@@ -79,17 +80,25 @@ python src/graphrag/app.py
 
 ### For Developers
 
-1. Read [CLAUDE.md](CLAUDE.md) for architecture details
-2. Check [PRD.md](PRD.md) for complete implementation plan
-3. Review [PHASE5_COMPLETE.md](PHASE5_COMPLETE.md) and [PHASE6_COMPLETE.md](PHASE6_COMPLETE.md) for latest features
+See [CLAUDE.md](CLAUDE.md) for complete codebase documentation and development guidelines.
 
-## Documentation
+## 📚 Documentation
 
 | Document | Description | Use When |
 |----------|-------------|----------|
-| [QUICKSTART.md](QUICKSTART.md) | Development start guide, Phase 0 checklist | Starting a new session |
-| [CLAUDE.md](CLAUDE.md) | Architecture guide, query patterns, troubleshooting | Understanding system design |
-| [PRD.md](PRD.md) | Complete implementation plan with code examples | Implementing phases |
+| **[README.md](README.md)** | 👈 You are here | Project overview and quick start |
+| **[QUICKSTART.md](QUICKSTART.md)** | Fast setup guide | First-time setup |
+| **[ARCHITECTURE.md](ARCHITECTURE.md)** | System architecture, 4-layer graph model | Understanding design |
+| **[CLAUDE.md](CLAUDE.md)** | Complete codebase guide for Claude Code | Development and AI assistance |
+| **[DEPLOYMENT.md](DEPLOYMENT.md)** | Production deployment guide | Deploying to prod/staging |
+| **[CHANGELOG.md](CHANGELOG.md)** | Version history and release notes | Tracking changes |
+| **[PRD.md](PRD.md)** | Product Requirements Document | Implementation reference |
+
+### Recent Updates
+| Document | Description |
+|----------|-------------|
+| **[BUGFIX_QUERY_PATH_ROUTING.md](BUGFIX_QUERY_PATH_ROUTING.md)** | Query path bugfix (v1.1.0) |
+| **[TEST_REPORT_QUERY_PATH_FIX.md](TEST_REPORT_QUERY_PATH_FIX.md)** | Automated test results |
 
 ## Technology Stack
 

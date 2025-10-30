@@ -29,6 +29,103 @@ def get_text2cypher_generator() -> Text2CypherGenerator:
     return _text2cypher_generator
 
 
+# ========================================
+# Entity Type Configuration Registry
+# ========================================
+# Extensible configuration for all entity types
+# Priority determines which template to use when multiple entities are matched
+ENTITY_TYPE_CONFIG = {
+    "Requirement": {
+        "priority": 1,
+        "template_method": "get_requirement_traceability",
+        "id_field": "id",
+        "aliases": ["requirement", "requirements", "req"]
+    },
+    "Component": {
+        "priority": 2,
+        "template_method": "get_component_requirements",
+        "id_field": "id",
+        "aliases": ["component", "components", "comp"]
+    },
+    "TestCase": {
+        "priority": 3,
+        "template_method": "get_test_case_details",
+        "id_field": "id",
+        "aliases": ["testcase", "test_case", "test_cases", "tc"]
+    },
+    "Protocol": {
+        "priority": 4,
+        "template_method": "get_protocol_requirements",
+        "id_field": "id",
+        "aliases": ["protocol", "protocols"]
+    },
+    "SpacecraftModule": {
+        "priority": 5,
+        "template_method": "get_module_details",
+        "id_field": "id",
+        "aliases": ["spacecraftmodule", "spacecraft_module", "module", "modules"]
+    },
+    "Scenario": {
+        "priority": 6,
+        "template_method": "get_scenario_details",
+        "id_field": "id",
+        "aliases": ["scenario", "scenarios"]
+    },
+    "Organization": {
+        "priority": 7,
+        "template_method": "get_organization_projects",
+        "id_field": "id",
+        "aliases": ["organization", "organizations", "org", "orgs"]
+    }
+}
+
+
+def _find_entity_type_key(matched_entities: Dict, entity_type: str) -> Optional[str]:
+    """
+    Find the actual key in matched_entities for a given entity type.
+    Handles case-insensitive matching and aliases.
+
+    Args:
+        matched_entities: Dict from router with matched entities
+        entity_type: Canonical entity type (e.g., "Protocol")
+
+    Returns:
+        Actual key in matched_entities or None
+    """
+    config = ENTITY_TYPE_CONFIG.get(entity_type)
+    if not config:
+        return None
+
+    # Check all possible aliases
+    search_terms = [entity_type] + config["aliases"]
+
+    for key in matched_entities.keys():
+        if key.lower() in [term.lower() for term in search_terms]:
+            return key
+
+    return None
+
+
+def _extract_entity_id(entity_data: Any, id_field: str = "id") -> Optional[str]:
+    """
+    Extract entity ID from various data formats.
+
+    Args:
+        entity_data: Entity data (str, dict, or other)
+        id_field: Field name containing the ID
+
+    Returns:
+        Entity ID string or None
+    """
+    if isinstance(entity_data, str):
+        return entity_data
+    elif isinstance(entity_data, dict):
+        return entity_data.get(id_field) or entity_data.get("name")
+    else:
+        logger.warning(f"Unknown entity data format: {type(entity_data)}")
+        return None
+
+
 def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
     """
     LangGraph Node: Execute predefined Cypher template (Path A).
@@ -50,39 +147,58 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
 
     logger.info(f"Running template Cypher with entities: {matched_entities}")
 
-    # Select template based on entities
+    # Select template based on priority
     templates = CypherTemplates()
     cypher_query = None
     results = []
+    selected_entity_type = None
+    selected_entity_id = None
 
     try:
-        # Priority: Requirement → Component → TestCase → Protocol
-        # Handle both "Requirement"/"requirements", "Component"/"components", etc.
-        requirement_key = next((k for k in matched_entities.keys() if k.lower() in ["requirement", "requirements"]), None)
-        component_key = next((k for k in matched_entities.keys() if k.lower() in ["component", "components"]), None)
-        testcase_key = next((k for k in matched_entities.keys() if k.lower() in ["testcase", "test_case", "test_cases"]), None)
+        # Sort entity types by priority (lowest number = highest priority)
+        sorted_types = sorted(
+            ENTITY_TYPE_CONFIG.keys(),
+            key=lambda t: ENTITY_TYPE_CONFIG[t]["priority"]
+        )
 
-        if requirement_key and matched_entities[requirement_key]:
-            req_data = matched_entities[requirement_key][0]
-            req_id = req_data if isinstance(req_data, str) else req_data.get("id")
-            cypher_query = templates.get_requirement_traceability(req_id)
-            logger.info(f"Using requirement traceability template for {req_id}")
+        # Find first matching entity type
+        for entity_type in sorted_types:
+            entity_key = _find_entity_type_key(matched_entities, entity_type)
 
-        elif component_key and matched_entities[component_key]:
-            comp_data = matched_entities[component_key][0]
-            comp_id = comp_data if isinstance(comp_data, str) else comp_data.get("id")
-            cypher_query = templates.get_component_requirements(comp_id)
-            logger.info(f"Using component requirements template for {comp_id}")
+            if entity_key and matched_entities[entity_key]:
+                config = ENTITY_TYPE_CONFIG[entity_type]
+                entity_data = matched_entities[entity_key][0]
+                entity_id = _extract_entity_id(entity_data, config["id_field"])
 
-        elif testcase_key and matched_entities[testcase_key]:
-            tc_data = matched_entities[testcase_key][0]
-            tc_id = tc_data if isinstance(tc_data, str) else tc_data.get("id")
-            cypher_query = templates.get_test_case_details(tc_id)
-            logger.info(f"Using test case details template for {tc_id}")
+                if entity_id:
+                    # Get template method
+                    template_method_name = config["template_method"]
 
-        else:
-            logger.warning("No suitable template found for matched entities")
+                    if not hasattr(templates, template_method_name):
+                        logger.error(f"Template method '{template_method_name}' not found in CypherTemplates")
+                        continue
+
+                    template_method = getattr(templates, template_method_name)
+                    cypher_query = template_method(entity_id)
+
+                    selected_entity_type = entity_type
+                    selected_entity_id = entity_id
+
+                    logger.info(
+                        f"✓ Template selected: {template_method_name}({entity_id}) "
+                        f"for entity type '{entity_type}' (priority {config['priority']})"
+                    )
+                    break
+
+        if cypher_query is None:
+            logger.warning(
+                f"No suitable template found for matched entities: {list(matched_entities.keys())}"
+            )
             state["graph_results"] = []
+            state["template_selection_error"] = (
+                f"No template available for entity types: {list(matched_entities.keys())}"
+            )
+            state["query_generation_method"] = "template_not_found"
             return state
 
         # Execute query
@@ -90,16 +206,22 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
         results = neo4j_client.execute(cypher_query)
         neo4j_client.close()
 
-        logger.info(f"Template Cypher returned {len(results)} results")
+        logger.info(f"✓ Template Cypher returned {len(results)} results")
 
         # Update state
         state["cypher_query"] = cypher_query
         state["graph_results"] = results
+        state["query_generation_method"] = f"template:{selected_entity_type}"
+        state["template_entity"] = {
+            "type": selected_entity_type,
+            "id": selected_entity_id
+        }
 
     except Exception as e:
-        logger.error(f"Template Cypher execution failed: {e}")
+        logger.error(f"Template Cypher execution failed: {e}", exc_info=True)
         state["error"] = f"Cypher execution error: {str(e)}"
         state["graph_results"] = []
+        state["query_generation_method"] = "template_error"
 
     return state
 
