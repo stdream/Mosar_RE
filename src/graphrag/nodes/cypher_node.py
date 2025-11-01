@@ -139,6 +139,7 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
         Updated state with 'cypher_query' and 'graph_results'
     """
     matched_entities = state.get("matched_entities", {})
+    user_question = state.get("user_question", "")
 
     if not matched_entities:
         logger.warning("No matched entities for template Cypher")
@@ -153,8 +154,21 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
     results = []
     selected_entity_type = None
     selected_entity_id = None
+    selected_template_method = None
 
     try:
+        # Check if question is about requirements decomposition
+        question_lower = user_question.lower()
+        decomposition_keywords = [
+            'decomposition', '분해', 'breakdown', '하위 요구사항', 'child requirement',
+            'derived requirement', 'hierarchy', '계층', '구조', 'structure',
+            'tree', '트리', 'descendants', '파생', '검증 상태', 'verification status'
+        ]
+        is_decomposition_query = any(keyword in question_lower for keyword in decomposition_keywords)
+
+        if is_decomposition_query:
+            logger.info(f"✓ Decomposition keywords detected in question: {user_question}")
+
         # Sort entity types by priority (lowest number = highest priority)
         sorted_types = sorted(
             ENTITY_TYPE_CONFIG.keys(),
@@ -171,8 +185,13 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
                 entity_id = _extract_entity_id(entity_data, config["id_field"])
 
                 if entity_id:
-                    # Get template method
-                    template_method_name = config["template_method"]
+                    # Special case: Use decomposition template for Requirement if keywords detected
+                    if entity_type == "Requirement" and is_decomposition_query:
+                        template_method_name = "get_requirement_decomposition_tree"
+                        logger.info(f"✓ Detected decomposition query, using specialized template")
+                    else:
+                        # Get template method from config
+                        template_method_name = config["template_method"]
 
                     if not hasattr(templates, template_method_name):
                         logger.error(f"Template method '{template_method_name}' not found in CypherTemplates")
@@ -183,6 +202,7 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
 
                     selected_entity_type = entity_type
                     selected_entity_id = entity_id
+                    selected_template_method = template_method_name  # Store for metadata
 
                     logger.info(
                         f"✓ Template selected: {template_method_name}({entity_id}) "
@@ -211,10 +231,11 @@ def run_template_cypher(state: GraphRAGState) -> GraphRAGState:
         # Update state
         state["cypher_query"] = cypher_query
         state["graph_results"] = results
-        state["query_generation_method"] = f"template:{selected_entity_type}"
+        state["query_generation_method"] = f"template:{selected_template_method}"
         state["template_entity"] = {
             "type": selected_entity_type,
-            "id": selected_entity_id
+            "id": selected_entity_id,
+            "template": selected_template_method
         }
 
     except Exception as e:

@@ -8,25 +8,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Status
 
-**Version**: 1.1.0 ✅ **PRODUCTION READY**
+**Version**: 1.2.0 ✅ **PRODUCTION READY**
 
 **Implementation Complete**:
 - Production-ready GraphRAG system for spacecraft requirements engineering
 - 7 entity types supported (Requirement, Component, TestCase, Protocol, SpacecraftModule, Scenario, Organization)
 - Comprehensive test suite with 85% coverage
-- Full V-Model traceability for 227 requirements
-- Response times: Pure Cypher <500ms, Hybrid <2000ms
+- **Multi-hop V-Model traceability** for 227 requirements (upward/horizontal/downward)
+- Response times: Pure Cypher <1000ms, Hybrid <2500ms
 - Streamlit Web UI with real-time streaming
 
-**Recent Changes** (v1.1.0 - 2025-10-30):
-- ✅ Query Path Routing bugfix (Protocol queries now work)
-- ✅ Graceful fallback mechanism (PURE_CYPHER → HYBRID)
-- ✅ Enhanced UI error messages
-- ✅ Documentation cleanup (removed 14 intermediate docs)
+**Recent Changes** (v1.2.0 - 2025-10-31):
+- ✅ **Multi-hop traceability** (parent/child requirements, 1-2 levels)
+- ✅ **Decomposition tree visualization** with verification statistics
+- ✅ **Smart router** (filter-only entities → PURE_VECTOR path)
+- ✅ **Enhanced fallback** (works in streaming mode)
+- ✅ **Vector synthesis** (uses documents when graph is empty)
 
 **See Also**: [CHANGELOG.md](CHANGELOG.md) for complete version history
 
-**Last Updated**: 2025-10-30
+**Last Updated**: 2025-10-31
 
 ## Quick Reference
 

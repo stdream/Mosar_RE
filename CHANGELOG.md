@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.0] - 2025-10-31
+
+### Added - Multi-Hop Traceability & Enhanced Query Routing
+
+#### Multi-Hop Traceability
+- **V-Model Complete Traceability**: Full bi-directional requirement tracing
+  - Upward: Component → Subsystem → System requirements (1-2 levels)
+  - Horizontal: Requirements ↔ TestCases ↔ Components ↔ Interfaces
+  - Downward: System → Subsystem → Component with verification details
+- **Enhanced Cypher Templates**:
+  - `get_requirement_traceability()`: Multi-hop V-Model traceability with parent/child requirements
+  - `get_component_requirements()`: Multi-hop component analysis with requirement hierarchy
+  - `get_requirement_decomposition_tree()`: Structured tree view with verification statistics
+
+#### Decomposition Tree Visualization
+- **Structured Tree Format**: Hierarchical display of requirement decomposition
+  - Level 1 (Subsystem): Direct children with verification status
+  - Level 2 (Component): Grandchildren with test cases and components
+  - Verification Summary: Coverage statistics (tested vs untested)
+- **Special Formatting in Synthesis**: Auto-detection and formatting of decomposition tree results
+
+#### Graceful Fallback Enhancements
+- **Streaming Workflow Fallback**: Implemented in `query_stream()` method
+  - PURE_CYPHER → HYBRID fallback when template not found or returns empty results
+  - Status message: "Searching documents (fallback)..." for user visibility
+  - Automatic vector search + NER + contextual Cypher execution
+- **Smart Router Logic**: Filter-only entities (no ID) get reduced confidence
+  - "안전 요구사항" → confidence 1.0 × 0.4 = 0.4 → PURE_VECTOR path
+  - Prevents unnecessary PURE_CYPHER attempts for category queries
+  - Enables direct vector search for exploratory questions
+
+#### Synthesis Improvements
+- **Hybrid Path Vector Support**: LLM synthesis now uses vector results even when graph is empty
+  - Before: HYBRID + empty graph → Error message
+  - After: HYBRID + empty graph + vector results → LLM generates answer from documents
+- **Better Empty Result Handling**:
+  - PURE_CYPHER: Empty graph → Error (correct behavior)
+  - HYBRID: Both empty → Comprehensive error message
+  - HYBRID: Graph empty but vector available → Continue to LLM
+
+### Fixed
+- **Critical**: Filter-only entities (e.g., "안전 요구사항") no longer trigger PURE_CYPHER failures
+- **Critical**: Vector search results now properly used in HYBRID path synthesis
+- **Critical**: Graceful fallback now works in streaming mode (Streamlit web UI)
+- Multi-hop queries now return complete traceability data (parent/child requirements)
+- Decomposition queries show verification statistics and test coverage
+
+### Changed
+- **Router Confidence Calculation**: Distinguishes between specific entity IDs and filter-only entities
+- **Cypher Templates**: All traceability queries upgraded to multi-hop (1-2 levels)
+- **Synthesis Logic**: Separate handling for PURE_CYPHER vs HYBRID empty results
+- **Workflow**: Added fallback execution in `query_stream()` for consistency with full LangGraph workflow
+
+### Technical Details
+- Modified Files:
+  - `src/query/cypher_templates.py`: 3 templates upgraded to multi-hop (+200 lines)
+  - `src/query/router.py`: Smart confidence calculation for filter-only entities (+40 lines)
+  - `src/graphrag/workflow.py`: Streaming fallback implementation (+30 lines)
+  - `src/graphrag/nodes/synthesize_streaming_node.py`: Vector result handling (+120 lines)
+  - `src/graphrag/nodes/cypher_node.py`: Decomposition keyword detection (+15 lines)
+- Performance: Multi-hop queries <1000ms (PURE_CYPHER), <2500ms (HYBRID)
+- Data Completeness: 227 requirements with full V-Model traceability
+
+---
+
 ## [1.1.0] - 2025-10-30
 
 ### Added

@@ -381,6 +381,37 @@ class GraphRAGWorkflow:
                 state_obj = run_template_cypher(state_obj)
                 state.update(state_obj)
 
+                # Graceful fallback: If template failed, fall back to HYBRID path
+                template_failed = (
+                    state_obj.get("template_selection_error") or
+                    not state_obj.get("graph_results") or
+                    len(state_obj.get("graph_results", [])) == 0
+                )
+
+                if template_failed:
+                    fallback_reason = state_obj.get("template_selection_error") or "No results from template query"
+                    logger.warning(f"Template Cypher failed: {fallback_reason}. Falling back to HYBRID path.")
+
+                    # Update query path
+                    state["query_path"] = QueryPath.HYBRID
+                    state["fallback_reason"] = fallback_reason
+                    query_path = QueryPath.HYBRID  # Update local variable
+
+                    # Execute HYBRID path
+                    yield {"type": "status", "message": "Searching documents (fallback)..."}
+                    logger.info(f"🔄 Executing vector search fallback for: {user_question[:50]}...")
+                    state_obj = run_vector_search(state_obj)
+                    state.update(state_obj)
+                    logger.info(f"✓ Vector search returned {len(state_obj.get('top_k_sections', []))} sections")
+
+                    yield {"type": "status", "message": "Extracting entities..."}
+                    state_obj = extract_entities_from_context(state_obj)
+                    state.update(state_obj)
+
+                    yield {"type": "status", "message": "Querying knowledge graph..."}
+                    state_obj = run_contextual_cypher(state_obj)
+                    state.update(state_obj)
+
             # Step 3: Stream synthesis
             yield {"type": "status", "message": "Generating answer..."}
 

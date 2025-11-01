@@ -180,36 +180,41 @@ def render_example_questions():
 
     examples = [
         {
-            "text": "R-ICU를 변경하면 어떤 요구사항이 영향받나요?",
-            "emoji": "🔧",
-            "type": "Component Impact"
+            "text": "FuncR_C104의 V-Model 완전 추적성: 테스트부터 컴포넌트, 상위 요구사항까지 모두 보여줘",
+            "emoji": "🔍",
+            "type": "Bidirectional Traceability",
+            "path": "Path A - 양방향 추적성 (상향↑, 수평↔, 하향↓)"
         },
         {
-            "text": "FuncR_S110의 전체 추적성을 보여주세요",
-            "emoji": "🔗",
-            "type": "Traceability"
+            "text": "FuncR_S110의 요구사항 분해 구조와 하위 요구사항들의 검증 상태를 보여줘",
+            "emoji": "🌳",
+            "type": "Requirements Decomposition",
+            "path": "Path A - 요구사항 분해 트리 (System → Subsystem → Component)"
         },
         {
-            "text": "테스트 케이스가 없는 요구사항은 무엇인가요?",
-            "emoji": "⚠️",
-            "type": "Testing Gap"
+            "text": "워킹 매니퓰레이터의 전력 관리는 어떤 컴포넌트가 담당하고 프로토콜은 뭐야?",
+            "emoji": "🔌",
+            "type": "Multi-hop Graph",
+            "path": "Path B - 다국어 + Multi-hop 그래프 탐색"
         },
         {
-            "text": "What hardware handles network communication?",
-            "emoji": "🌐",
-            "type": "Architecture"
+            "text": "우주 환경에서 모듈 간 hot-swapping을 구현할 때 고려해야 할 안전 요구사항은?",
+            "emoji": "🛡️",
+            "type": "Safety Synthesis",
+            "path": "Path C - 분산 정보 통합 (10+ 문서)"
         },
         {
-            "text": "Show me components that use the CAN protocol",
-            "emoji": "🚌",
-            "type": "Protocol Query"
+            "text": "R-ICU를 변경하면 어떤 요구사항, 테스트, 모듈에 영향을 주나요?",
+            "emoji": "💥",
+            "type": "Impact Analysis",
+            "path": "Path A - 변경 영향 범위 분석"
         }
     ]
 
     cols = st.columns(len(examples))
     for col, ex in zip(cols, examples):
         with col:
-            if st.button(f"{ex['emoji']} {ex['type']}", use_container_width=True, key=f"ex_{examples.index(ex)}"):
+            if st.button(f"{ex['emoji']} {ex['type']}", use_container_width=True, key=f"ex_{examples.index(ex)}", help=f"{ex['path']}: {ex['text'][:60]}..."):
                 st.session_state.example_question = ex['text']
                 st.rerun()
 
@@ -246,6 +251,9 @@ def process_query_non_streaming(question: str):
 
 def process_query_streaming(question: str):
     """Process query with streaming."""
+    # Display Answer header first (to avoid duplication)
+    st.markdown("### 📝 Answer")
+
     answer_placeholder = st.empty()
     status_placeholder = st.empty()
     full_answer = ""
@@ -282,14 +290,20 @@ def process_query_streaming(question: str):
     }
 
 
-def display_result(result: Dict[str, Any]):
-    """Display query result with all metadata."""
+def display_result(result: Dict[str, Any], skip_answer: bool = False):
+    """Display query result with all metadata.
+
+    Args:
+        result: Query result containing answer and metadata
+        skip_answer: If True, skip displaying the answer section (used in streaming mode)
+    """
     if not result:
         return
 
-    # Answer
-    st.markdown("### 📝 Answer")
-    st.markdown(result["answer"])
+    # Answer section - skip in streaming mode (already displayed during streaming)
+    if not skip_answer:
+        st.markdown("### 📝 Answer")
+        st.markdown(result["answer"])
 
     st.markdown("---")
 
@@ -328,6 +342,20 @@ def display_result(result: Dict[str, Any]):
 
     with tab2:
         citations = result.get("citations", [])
+        graph_results_count = len(metadata.get("graph_results", []))
+
+        # Validation warning: Check if citations match graph results count
+        if graph_results_count > 0 and len(citations) < graph_results_count:
+            st.warning(f"""
+⚠️ **Citation 불완전**
+
+- 그래프 결과: {graph_results_count}개
+- Citation 표시: {len(citations)}개
+- 누락: {graph_results_count - len(citations)}개
+
+일부 요구사항 ID가 Citation에서 누락되었을 수 있습니다. Cypher Query 탭에서 전체 결과를 확인하세요.
+            """.strip())
+
         if citations:
             st.markdown(f"**{len(citations)} sources cited:**")
             for i, citation in enumerate(citations, 1):
@@ -387,6 +415,20 @@ def display_result(result: Dict[str, Any]):
                 graph_results_count
             )
 
+        # CRITICAL: Warning for empty graph results (hallucination bug fix)
+        query_path = metadata.get("query_path", "")
+        if (query_path == "pure_cypher" or query_path == "hybrid") and graph_results_count == 0:
+            st.warning("""
+⚠️ **그래프 쿼리 결과가 비어 있습니다**
+
+Cypher 쿼리가 실행되었지만 결과가 0개입니다. 이는 다음을 의미할 수 있습니다:
+- 검색한 엔티티가 데이터베이스에 존재하지 않음
+- 엔티티는 존재하지만 관련 관계가 생성되지 않음
+- 잘못된 엔티티 ID 형식
+
+위의 응답 내용을 주의 깊게 확인하시고, 필요시 다른 검색어로 재시도해주세요.
+            """.strip())
+
 
 def main():
     """Main application."""
@@ -400,17 +442,17 @@ def main():
 
     st.markdown("### 💬 Ask a Question")
 
-    # Check for example question
-    default_question = st.session_state.get("example_question", "")
-    if default_question:
+    # Check for example question and set it to the input key
+    if "example_question" in st.session_state:
+        st.session_state.question_input = st.session_state.example_question
         del st.session_state.example_question  # Clear after use
 
-    # Question input
+    # Question input - key automatically saves to session_state
     user_question = st.text_area(
         "Enter your question:",
-        value=default_question,
         height=100,
-        placeholder="예: R-ICU를 변경하면 어떤 요구사항이 영향받나요?\nOr: What requirements are related to R-ICU?"
+        placeholder="예: R-ICU를 변경하면 어떤 요구사항이 영향받나요?\nOr: What requirements are related to R-ICU?",
+        key="question_input"
     )
 
     # Submit button
@@ -423,23 +465,29 @@ def main():
         clear_button = st.button("🗑️ Clear", use_container_width=True)
 
     if clear_button:
+        # Clear the text area value
+        if "question_input" in st.session_state:
+            del st.session_state.question_input
         st.rerun()
 
-    # Process query
+    # Process query - use session_state value directly
     if submit_button and user_question.strip():
         st.markdown("---")
 
         # Process based on streaming setting
         if st.session_state.streaming_enabled:
             result = process_query_streaming(user_question)
+            if result:
+                # Display result (skip answer - already shown during streaming)
+                display_result(result, skip_answer=True)
         else:
             result = process_query_non_streaming(user_question)
+            if result:
+                # Display result (include answer)
+                display_result(result, skip_answer=False)
 
+        # Add to history (both streaming and non-streaming modes)
         if result:
-            # Display result
-            display_result(result)
-
-            # Add to history
             history_entry = {
                 "question": user_question,
                 "answer": result["answer"][:200],  # Truncate

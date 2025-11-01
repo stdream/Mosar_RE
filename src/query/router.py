@@ -46,13 +46,17 @@ class QueryRouter:
         # Below moderate → Path C: Pure Vector
 
         # Known requirement ID patterns
-        self.req_pattern = re.compile(r'\b(FuncR|SafR|PerfR|IntR)_[A-Z]\d{3}\b', re.IGNORECASE)
+        # IMPORTANT: No \b word boundary - doesn't work with Korean text!
+        # Use non-capturing group (?:...) to get full match, not just group
+        self.req_pattern = re.compile(r'(?:FuncR|SafR|PerfR|IntR|ConfR|DesR)_[A-Z]\d{3}', re.IGNORECASE)
 
         # Known component ID patterns
-        self.component_pattern = re.compile(r'\b(R-ICU|WM|SM|OBC|cPDU|HOTDOCK)\b', re.IGNORECASE)
+        # IMPORTANT: No \b word boundary - doesn't work with Korean text!
+        self.component_pattern = re.compile(r'(?:R-ICU|WM|SM|OBC-[SC]|OBC|cPDU|HOTDOCK)', re.IGNORECASE)
 
         # Known test case patterns
-        self.testcase_pattern = re.compile(r'\b(CT-[A-Z]-\d+|IT\d+|S\d+)\b', re.IGNORECASE)
+        # IMPORTANT: No \b word boundary - doesn't work with Korean text!
+        self.testcase_pattern = re.compile(r'(?:CT-[A-Z]-\d+|IT\d+|S\d+)', re.IGNORECASE)
 
     def route(self, user_question: str) -> Tuple[QueryPath, Dict]:
         """
@@ -114,6 +118,9 @@ class QueryRouter:
         """
         Calculate overall confidence score from resolved entities.
 
+        IMPORTANT: Filter-only entities (no ID, only filters like {type: 'SafR'})
+        should have LOWER confidence to trigger PURE_VECTOR path.
+
         Args:
             resolved_entities: Output from EntityResolver.resolve_entities_in_text()
 
@@ -128,8 +135,22 @@ class QueryRouter:
 
         for entity_type, entities in resolved_entities.items():
             for entity in entities:
-                if isinstance(entity, dict) and 'confidence' in entity:
-                    confidences.append(entity['confidence'])
+                if isinstance(entity, dict):
+                    # Check if this is a specific entity (has 'id') or filter-only (has 'filter')
+                    if 'id' in entity and entity.get('id'):
+                        # Specific entity ID - use original confidence
+                        if 'confidence' in entity:
+                            confidences.append(entity['confidence'])
+                    elif 'filter' in entity:
+                        # Filter-only entity (e.g., "안전 요구사항" → {filter: {type: 'SafR'}})
+                        # Reduce confidence below MODERATE_CONFIDENCE_THRESHOLD (0.6) → PURE_VECTOR
+                        if 'confidence' in entity:
+                            reduced_confidence = entity['confidence'] * 0.4  # 1.0 * 0.4 = 0.4
+                            confidences.append(reduced_confidence)
+                            logger.info(f"Filter-only entity detected: reducing confidence {entity['confidence']:.2f} → {reduced_confidence:.2f} → PURE_VECTOR path")
+                    elif 'confidence' in entity:
+                        # Fallback: use original confidence
+                        confidences.append(entity['confidence'])
 
         if not confidences:
             # If entities found but no confidence scores, assume moderate confidence

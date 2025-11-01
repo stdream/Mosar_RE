@@ -29,28 +29,78 @@ class CypherTemplates:
     @staticmethod
     def get_requirement_traceability(req_id: str) -> str:
         """
-        Get full traceability chain for a requirement.
+        Get complete V-Model traceability for a requirement (multi-hop).
 
-        Path: Requirement → DesignConcept → DetailedDesign → Component → TestCase
+        Includes:
+        - Upward: Parent requirements (System → Subsystem)
+        - Horizontal: Test cases, Components, Interfaces
+        - Downward: Child requirements with their tests/components
 
         Args:
-            req_id: Requirement ID (e.g., 'FuncR_S110')
+            req_id: Requirement ID (e.g., 'FuncR_C104')
 
         Returns:
-            Cypher query string
+            Cypher query string with full V-Model traceability
         """
         return f"""
-        MATCH path = (req:Requirement {{id: '{req_id}'}})
+        // Main requirement
+        MATCH (req:Requirement {{id: '{req_id}'}})
+
+        // Upward traceability: Parent requirements
+        OPTIONAL MATCH (req)-[:DERIVES_FROM*1..2]->(parent:Requirement)
+
+        // Downward traceability: Child requirements
+        OPTIONAL MATCH (req)<-[:DERIVES_FROM*1..2]-(child:Requirement)
+
+        // Horizontal: Test cases (main requirement)
         OPTIONAL MATCH (req)<-[:VERIFIES]-(tc:TestCase)
-        OPTIONAL MATCH (req)-[:RELATES_TO]->(c:Component)
+
+        // Horizontal: Components (main requirement)
+        OPTIONAL MATCH (req)-[:RELATES_TO]->(comp:Component)
+
+        // Horizontal: Interfaces (via components)
+        OPTIONAL MATCH (comp)-[:HAS_INTERFACE]->(iface:Interface)
+
+        // Aggregate main requirement data
+        WITH req,
+             collect(DISTINCT parent.id) as parent_ids,
+             collect(DISTINCT child) as child_nodes,
+             collect(DISTINCT tc.id) as test_case_ids,
+             collect(DISTINCT comp.id) as component_ids,
+             collect(DISTINCT iface.id) as interface_ids
+
+        // For each child, find their tests and components
+        UNWIND CASE WHEN size(child_nodes) > 0 THEN child_nodes ELSE [null] END as child_node
+        OPTIONAL MATCH (child_node)<-[:VERIFIES]-(child_tc:TestCase)
+        OPTIONAL MATCH (child_node)-[:RELATES_TO]->(child_comp:Component)
+
+        WITH req, parent_ids, test_case_ids, component_ids, interface_ids, child_node,
+             collect(DISTINCT child_tc.id) as child_test_ids,
+             collect(DISTINCT child_comp.id) as child_comp_ids
+
+        // Aggregate child details
+        WITH req, parent_ids, test_case_ids, component_ids, interface_ids,
+             collect(DISTINCT CASE WHEN child_node IS NOT NULL THEN {{
+                 id: child_node.id,
+                 type: child_node.type,
+                 statement: child_node.statement,
+                 verification: child_node.verification,
+                 level: child_node.level,
+                 test_cases: child_test_ids,
+                 components: child_comp_ids
+             }} ELSE null END) as child_details_raw
+
         RETURN
             req.id AS requirement_id,
             req.statement AS requirement_statement,
             req.type AS requirement_type,
             req.level AS requirement_level,
             req.verification AS verification_method,
-            collect(DISTINCT tc.id) AS test_cases,
-            collect(DISTINCT c.id) AS related_components
+            test_case_ids AS test_cases,
+            component_ids AS related_components,
+            interface_ids AS related_interfaces,
+            parent_ids AS parent_requirements,
+            [item IN child_details_raw WHERE item IS NOT NULL] AS child_requirements
         """
 
     @staticmethod
@@ -75,6 +125,60 @@ class CypherTemplates:
             collect(DISTINCT child.id) AS child_requirements
         """
 
+    @staticmethod
+    def get_requirement_decomposition_tree(req_id: str) -> str:
+        """
+        Get complete decomposition tree for a requirement (multi-level).
+
+        Shows:
+        - Direct child requirements
+        - Grandchildren requirements
+        - Test cases for each leaf requirement
+        - Components for each leaf requirement
+
+        Args:
+            req_id: Top-level requirement ID (e.g., 'FuncR_S110')
+
+        Returns:
+            Cypher query with complete decomposition structure
+        """
+        return f"""
+        MATCH (parent:Requirement {{id: '{req_id}'}})
+
+        // Get all descendants (children and grandchildren)
+        OPTIONAL MATCH path = (parent)<-[:DERIVES_FROM*1..2]-(descendant:Requirement)
+
+        WITH parent, descendant, length(path) as level
+        ORDER BY level, descendant.id
+
+        // Get tests and components for each descendant
+        OPTIONAL MATCH (descendant)<-[:VERIFIES]-(tc:TestCase)
+        OPTIONAL MATCH (descendant)-[:RELATES_TO]->(comp:Component)
+
+        WITH parent,
+             descendant,
+             level,
+             collect(DISTINCT tc.id) as test_cases,
+             collect(DISTINCT comp.id) as components
+
+        RETURN
+            parent.id as parent_id,
+            parent.statement as parent_statement,
+            parent.type as parent_type,
+            parent.level as parent_level,
+            collect({{
+                id: descendant.id,
+                statement: descendant.statement,
+                type: descendant.type,
+                level: level,
+                verification: descendant.verification,
+                test_cases: test_cases,
+                components: components,
+                test_count: size(test_cases),
+                component_count: size(components)
+            }}) as descendants
+        """
+
     # ===============================
     # 2. Component Queries
     # ===============================
@@ -82,24 +186,72 @@ class CypherTemplates:
     @staticmethod
     def get_component_requirements(component_id: str) -> str:
         """
-        Get all requirements related to a component.
+        Get all requirements related to a component with multi-hop traceability.
+
+        Multi-hop traceability includes:
+        - Direct requirements (Component ← RELATES_TO ← Requirement)
+        - Child requirements (Requirement ← DERIVES_FROM ← Child)
+        - Parent requirements (Requirement → DERIVES_FROM → Parent)
+        - Test cases (Requirement ← VERIFIES ← TestCase)
 
         Args:
             component_id: Component ID (e.g., 'R-ICU')
 
         Returns:
-            Cypher query string
+            Cypher query string with full traceability
         """
         return f"""
+        // Step 1: Find direct requirements
         MATCH (c:Component {{id: '{component_id}'}})<-[:RELATES_TO]-(req:Requirement)
+
+        // Step 2: Multi-hop parent requirements (upward traceability)
+        OPTIONAL MATCH (req)-[:DERIVES_FROM*1..2]->(parent:Requirement)
+
+        // Step 3: Multi-hop child requirements (downward traceability)
+        OPTIONAL MATCH (req)<-[:DERIVES_FROM*1..2]-(child:Requirement)
+
+        // Step 4: Test cases for direct requirements
         OPTIONAL MATCH (req)<-[:VERIFIES]-(tc:TestCase)
+
+        // Aggregate per requirement
+        WITH req,
+             collect(DISTINCT parent.id) as parent_ids,
+             collect(DISTINCT child.id) as child_ids,
+             collect(DISTINCT tc.id) as test_case_ids,
+             collect(DISTINCT child) as child_nodes
+
+        // Step 5: For each child, find their test cases and components
+        UNWIND CASE WHEN size(child_nodes) > 0 THEN child_nodes ELSE [null] END as child_node
+        OPTIONAL MATCH (child_node)<-[:VERIFIES]-(child_tc:TestCase)
+        OPTIONAL MATCH (child_node)-[:RELATES_TO]->(child_comp:Component)
+
+        WITH req, parent_ids, child_ids, test_case_ids, child_node,
+             collect(DISTINCT child_tc.id) as child_test_ids,
+             collect(DISTINCT child_comp.id) as child_comp_ids
+
+        // Group back per requirement with child details
+        WITH req, parent_ids, child_ids, test_case_ids,
+             collect(DISTINCT CASE WHEN child_node IS NOT NULL THEN {{
+                 id: child_node.id,
+                 type: child_node.type,
+                 statement: child_node.statement,
+                 verification: child_node.verification,
+                 level: child_node.level,
+                 test_cases: child_test_ids,
+                 components: child_comp_ids
+             }} ELSE null END) as child_details_raw
+
         RETURN
             req.id AS requirement_id,
             req.type AS requirement_type,
             req.statement AS requirement_statement,
             req.verification AS verification_method,
-            count(DISTINCT tc) AS test_case_count,
-            collect(DISTINCT tc.id) AS test_cases
+            req.level AS requirement_level,
+            parent_ids AS parent_requirements,
+            child_ids AS child_requirement_ids,
+            [item IN child_details_raw WHERE item IS NOT NULL] AS child_requirements,
+            size(test_case_ids) AS test_case_count,
+            test_case_ids AS test_cases
         ORDER BY req.type, req.id
         """
 
