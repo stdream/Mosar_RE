@@ -24,6 +24,16 @@ from typing import Dict, Any, List
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '.')))
 
+# Load environment variables from Streamlit secrets (cloud) or .env (local)
+try:
+    # Streamlit Cloud: Use secrets
+    for key, value in st.secrets.items():
+        os.environ[key] = str(value)
+except (FileNotFoundError, AttributeError):
+    # Local: Use .env file
+    from dotenv import load_dotenv
+    load_dotenv()
+
 from src.graphrag.workflow import GraphRAGWorkflow
 from src.graphrag.hitl import HITLManager
 
