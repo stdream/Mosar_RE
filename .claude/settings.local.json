@@ -16,7 +16,15 @@
       "Bash(poetry run python:*)",
       "Read(//c/Users/stdre/Downloads/**)",
       "Bash(git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(timeout 5 poetry run streamlit run:*)",
+      "Bash(timeout 30 echo:*)",
+      "Bash(netstat:*)",
+      "Bash(taskkill:*)",
+      "Bash(start /B poetry run streamlit run streamlit_app.py --server.headless=true --server.port=8501)",
+      "Bash(timeout 15 bash:*)",
+      "Bash(poetry run streamlit:*)",
+      "Bash(timeout 3 ping:*)"
     ],
     "deny": [],
     "ask": []

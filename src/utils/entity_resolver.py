@@ -1,6 +1,7 @@
 """Entity resolution using dictionary lookup and fuzzy matching."""
 import json
 import sys
+import re
 from pathlib import Path
 from typing import Dict, List
 from fuzzywuzzy import process
@@ -53,6 +54,31 @@ class EntityResolver:
 
         results = {}
         text_lower = text.lower()
+
+        # 0. Pattern matching for requirement IDs (NEW - highest priority)
+        # Match patterns like FuncR_S110, DesR_A404, IntR_C302, PerfR_B203, SafR_X999
+        req_pattern = r'\b(FuncR|DesR|IntR|PerfR|SafR)_([A-Z])(\d{3})\b'
+        req_matches = re.finditer(req_pattern, text, re.IGNORECASE)
+
+        for match in req_matches:
+            req_id = match.group(0).upper()  # e.g., "FuncR_S110"
+            req_category = match.group(1)    # e.g., "FuncR"
+
+            entity_type = "Requirement"
+            if entity_type not in results:
+                results[entity_type] = []
+
+            # Check if already added (avoid duplicates)
+            if not any(e.get('id') == req_id for e in results[entity_type]):
+                results[entity_type].append({
+                    "id": req_id,
+                    "type": "Requirement",
+                    "category": req_category,
+                    "matched_phrase": req_id,
+                    "confidence": 1.0,
+                    "source": "pattern_match"
+                })
+                logger.info(f"Pattern matched requirement ID: {req_id}")
 
         # 1. Exact match (fastest)
         for phrase, entity in self.flat_dict.items():

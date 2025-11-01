@@ -69,10 +69,67 @@ def _synthesize_from_graph(state: GraphRAGState, language: str) -> Dict[str, Any
     graph_results = state.get("graph_results", [])
     top_k_sections = state.get("top_k_sections", [])
     cypher_query = state.get("cypher_query", "")
+    matched_entities = state.get("matched_entities", {})
 
-    if not graph_results and not top_k_sections:
+    # CRITICAL: Check if graph results are empty (fix for hallucination bug)
+    graph_is_empty = not graph_results or len(graph_results) == 0
+
+    if graph_is_empty:
+        # Graph query returned 0 results - provide clear empty results message
+        logger.warning(f"Empty graph results for query: {user_question}")
+
+        # Extract entity information for better error message
+        entity_info = ""
+        if matched_entities:
+            entity_list = []
+            for entity_type, entity_data in matched_entities.items():
+                if isinstance(entity_data, dict) and 'id' in entity_data:
+                    entity_list.append(f"{entity_type}: {entity_data['id']}")
+                elif isinstance(entity_data, list):
+                    entity_list.extend([f"{entity_type}: {e}" for e in entity_data])
+                elif isinstance(entity_data, str):
+                    entity_list.append(f"{entity_type}: {entity_data}")
+
+            if entity_list:
+                entity_info = ", ".join(entity_list)
+
+        if language == "ko":
+            answer = f"""데이터베이스에서 요청하신 정보를 찾을 수 없습니다.
+
+**쿼리 정보**:
+- 검색 엔티티: {entity_info if entity_info else '알 수 없음'}
+- 실행된 Cypher 쿼리: 성공적으로 실행됨
+- 반환된 결과: 0개
+
+**가능한 원인**:
+1. 요청하신 엔티티가 데이터베이스에 존재하지 않습니다
+2. 엔티티는 존재하지만 관련 관계(RELATES_TO, VERIFIES, USES_PROTOCOL 등)가 생성되지 않았습니다
+3. 데이터 ingestion 중 일부 관계가 누락되었을 수 있습니다
+
+**도움말**:
+- 엔티티 ID 형식을 확인해주세요 (예: FuncR_A101, R-ICU, CT-A-1)
+- 다른 검색어로 시도해보세요
+- 벡터 검색을 통해 문서에서 관련 내용을 찾아볼 수 있습니다"""
+        else:
+            answer = f"""No information found in the database for your query.
+
+**Query Information**:
+- Searched Entity: {entity_info if entity_info else 'Unknown'}
+- Cypher Query: Successfully executed
+- Results Returned: 0
+
+**Possible Causes**:
+1. The requested entity does not exist in the database
+2. The entity exists but lacks relationships (RELATES_TO, VERIFIES, USES_PROTOCOL, etc.)
+3. Some relationships may have been missed during data ingestion
+
+**Suggestions**:
+- Verify the entity ID format (e.g., FuncR_A101, R-ICU, CT-A-1)
+- Try different search terms
+- Use vector search to find related information in documents"""
+
         return {
-            "answer": "죄송합니다. 관련 정보를 찾을 수 없습니다." if language == "ko" else "I couldn't find relevant information to answer your question.",
+            "answer": answer,
             "citations": []
         }
 
@@ -89,28 +146,52 @@ def _synthesize_from_graph(state: GraphRAGState, language: str) -> Dict[str, Any
 
     # Language-specific prompts
     if language == "ko":
-        system_prompt = "당신은 MOSAR (Modular Spacecraft Assembly and Reconfiguration) 시스템 전문가입니다. 기술 문서와 그래프 데이터베이스 쿼리 결과를 바탕으로 정확하고 상세한 답변을 제공하세요."
+        system_prompt = """당신은 MOSAR (Modular Spacecraft Assembly and Reconfiguration) 시스템 전문가입니다.
+
+**중요 제약사항**:
+- 반드시 제공된 그래프 데이터베이스 결과만을 사용하여 답변하세요
+- 그래프 결과에 없는 요구사항 ID, 테스트 케이스 ID, 컴포넌트 ID를 절대 생성하거나 추측하지 마세요
+- 정보가 불충분하면 "데이터베이스에 해당 정보가 없습니다"라고 명확히 밝히세요
+- 허위 정보를 생성하는 것은 엄격히 금지됩니다"""
         instruction = """아래 질문에 대해 제공된 데이터를 바탕으로 답변해주세요.
 
 **답변 요구사항**:
-1. 정확하고 기술적으로 상세하게 답변
-2. 그래프 데이터베이스 결과를 우선적으로 사용
-3. 구체적인 컴포넌트 ID, 요구사항 ID, 테스트 케이스 ID 등을 명시
-4. 출처를 명확히 표시 (예: "PDD 3.2절에 따르면...")
-5. 관련 요구사항이나 테스트가 있으면 함께 언급
-6. 마크다운 형식으로 작성 (리스트, 테이블 등 활용)
+1. **오직 "Graph Query Results"에 있는 정보만 사용**
+2. 그래프 결과에 명시된 ID만 인용 (RQ-001 같은 임의의 ID 생성 금지)
+3. **모든 요구사항 ID를 빠짐없이 포함** (일부만 선택하지 말 것)
+4. 주요 항목은 자세히 설명하고, 나머지는 카테고리별로 나열
+5. 정보가 부족하면 "데이터베이스에 추가 정보 없음"이라고 명시
+6. 출처를 명확히 표시 (실제로 존재하는 문서 섹션만)
+7. 마크다운 형식으로 작성 (리스트, 테이블 등 활용)
+
+**절대 금지**:
+- 그래프 결과에 없는 요구사항/테스트 케이스 ID 생성
+- 추측이나 일반적인 지식으로 답변 작성
+- 플레이스홀더나 예시 데이터 생성
 """
     else:
-        system_prompt = "You are an expert in MOSAR (Modular Spacecraft Assembly and Reconfiguration) system. Provide accurate and detailed technical answers based on documentation and graph database query results."
+        system_prompt = """You are an expert in MOSAR (Modular Spacecraft Assembly and Reconfiguration) system.
+
+**CRITICAL CONSTRAINTS**:
+- Answer ONLY using the provided graph database results
+- NEVER generate, fabricate, or guess requirement IDs, test case IDs, or component IDs not in the graph results
+- If information is insufficient, clearly state "This information is not available in the database"
+- Generating false information is strictly prohibited"""
         instruction = """Answer the question below based on the provided data.
 
 **Answer Requirements**:
-1. Be accurate and technically detailed
-2. Prioritize graph database results
-3. Include specific component IDs, requirement IDs, test case IDs
-4. Clearly cite sources (e.g., "According to PDD Section 3.2...")
-5. Mention related requirements or tests if applicable
-6. Use markdown formatting (lists, tables, etc.)
+1. **Use ONLY information from "Graph Query Results"**
+2. Cite only IDs explicitly present in graph results (never generate fake IDs like RQ-001)
+3. **Include ALL requirement IDs without omission** (do not select only a few)
+4. Explain major items in detail, list remaining items by category
+5. If information is missing, state "Additional information not available in database"
+6. Cite sources clearly (only actual document sections that exist)
+7. Use markdown formatting (lists, tables, etc.)
+
+**STRICTLY PROHIBITED**:
+- Generating requirement/test case IDs not in graph results
+- Answering based on guesses or general knowledge
+- Creating placeholder or example data
 """
 
     prompt = f"""{instruction}
@@ -128,9 +209,45 @@ def _synthesize_from_graph(state: GraphRAGState, language: str) -> Dict[str, Any
 ```cypher
 {cypher_query}
 ```
-
-Provide a comprehensive answer:
 """
+
+    # Add structured template for multiple results
+    if graph_results and len(graph_results) > 0:
+        # Collect all IDs by category
+        all_ids_by_category = {}
+        for record in graph_results:
+            req_id = record.get("requirement_id")
+            if req_id:
+                # Extract category (e.g., FuncR, DesR, IntR, PerfR)
+                category = req_id.split('_')[0] if '_' in req_id else "Other"
+                if category not in all_ids_by_category:
+                    all_ids_by_category[category] = []
+                all_ids_by_category[category].append(req_id)
+
+        if all_ids_by_category:
+            num_results = len(graph_results)
+            prompt += f"\n\n**필수 답변 형식** (총 {num_results}개 결과):\n"
+            if num_results <= 5:
+                prompt += "1. 개요: 총 몇 개의 요구사항이 영향을 받는지 명시\n"
+                prompt += "2. 모든 요구사항을 자세히 설명\n"
+            elif num_results <= 15:
+                prompt += "1. 개요: 총 몇 개의 요구사항이 영향을 받는지 명시\n"
+                prompt += "2. 주요 요구사항 상세 설명 (5-7개)\n"
+                prompt += "3. 전체 요구사항 목록 (카테고리별)\n"
+            else:
+                prompt += "1. 개요: 총 몇 개의 요구사항이 영향을 받는지 명시\n"
+                prompt += "2. 주요 요구사항 상세 설명 (7-10개)\n"
+                prompt += "3. 전체 요구사항 목록 (카테고리별)\n"
+
+            prompt += "\n**검증용 전체 ID 목록** (반드시 모두 포함):\n"
+            for category in sorted(all_ids_by_category.keys()):
+                ids = all_ids_by_category[category]
+                prompt += f"- {category}: {len(ids)}개 - {', '.join(sorted(ids))}\n"
+
+            prompt += f"\n**합계 검증**: 모든 카테고리 개수를 합산하면 정확히 {num_results}개가 되어야 합니다.\n"
+            prompt += "\n**중요**: 위의 전체 ID 목록에 있는 모든 요구사항을 빠짐없이 답변에 포함해야 합니다.\n"
+
+    prompt += "\nProvide a comprehensive answer:\n"
 
     # Call GPT-4
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -251,6 +368,11 @@ def _format_graph_results(graph_results: List[Dict[str, Any]]) -> str:
     """
     Format graph query results as readable text.
 
+    Special handling for:
+    - Decomposition tree (parent + descendants)
+    - Traceability queries
+    - General results
+
     Args:
         graph_results: List of Neo4j query results
 
@@ -260,7 +382,11 @@ def _format_graph_results(graph_results: List[Dict[str, Any]]) -> str:
     if not graph_results:
         return "No graph results available."
 
-    # Convert to JSON for structured display
+    # Check if this is a decomposition tree result
+    if len(graph_results) == 1 and 'descendants' in graph_results[0]:
+        return _format_decomposition_tree(graph_results[0])
+
+    # Default: Convert to JSON for structured display
     formatted = json.dumps(graph_results, indent=2, ensure_ascii=False)
 
     # Truncate if too long
@@ -271,9 +397,85 @@ def _format_graph_results(graph_results: List[Dict[str, Any]]) -> str:
     return formatted
 
 
+def _format_decomposition_tree(result: Dict[str, Any]) -> str:
+    """
+    Format requirements decomposition tree for clear visualization.
+
+    Args:
+        result: Single decomposition tree result
+
+    Returns:
+        Formatted tree structure as string
+    """
+    parent_id = result.get('parent_id')
+    parent_statement = result.get('parent_statement', '')
+    parent_type = result.get('parent_type', '')
+    parent_level = result.get('parent_level', 'System')
+    descendants = result.get('descendants', [])
+
+    # Group descendants by level
+    level1 = [d for d in descendants if d.get('level') == 1]
+    level2 = [d for d in descendants if d.get('level') == 2]
+
+    output = f"""
+요구사항 분해 구조 (Requirements Decomposition Tree)
+=====================================================
+
+📋 상위 요구사항 (Parent Requirement)
+  ID: {parent_id}
+  Type: {parent_type}
+  Level: {parent_level}
+  Statement: {parent_statement[:200]}{'...' if len(parent_statement) > 200 else ''}
+
+└─ 하위 요구사항 ({len(level1)} Level-1 children, {len(level2)} Level-2 grandchildren)
+"""
+
+    # Level 1 children
+    if level1:
+        output += "\n   📍 Level 1 (Direct Children - Subsystem Level):\n"
+        for i, child in enumerate(level1, 1):
+            output += f"""
+   {i}. {child.get('id')} ({child.get('type')})
+      Statement: {child.get('statement', '')[:150]}{'...' if len(child.get('statement', '')) > 150 else ''}
+      Verification: {child.get('verification', 'N/A')}
+      Tests: {len(child.get('test_cases', []))} | Components: {len(child.get('components', []))}
+"""
+
+    # Level 2 grandchildren
+    if level2:
+        output += "\n   📍 Level 2 (Grandchildren - Component Level):\n"
+        for i, gc in enumerate(level2, 1):
+            test_info = f"{gc.get('test_count', 0)} tests: {gc.get('test_cases', [])}" if gc.get('test_count', 0) > 0 else "No tests"
+            comp_info = f"{gc.get('component_count', 0)} components: {gc.get('components', [])}" if gc.get('component_count', 0) > 0 else "No components"
+
+            output += f"""
+   {i}. {gc.get('id')} ({gc.get('type')})
+      Statement: {gc.get('statement', '')[:150]}{'...' if len(gc.get('statement', '')) > 150 else ''}
+      Verification: {gc.get('verification', 'N/A')}
+      {test_info}
+      {comp_info}
+"""
+
+    # Summary statistics
+    total_verified = sum(1 for d in descendants if d.get('test_count', 0) > 0)
+    total_unverified = len(descendants) - total_verified
+
+    output += f"""
+📊 검증 상태 요약 (Verification Summary)
+  - 총 하위 요구사항: {len(descendants)}개
+  - 테스트 완료: {total_verified}개
+  - 미검증: {total_unverified}개
+  - 검증률: {(total_verified/len(descendants)*100) if descendants else 0:.1f}%
+"""
+
+    return output
+
+
 def _extract_citations(graph_results: List[Dict], sections: List[Dict]) -> List[Dict[str, str]]:
     """
     Extract citation information from results.
+
+    IMPORTANT: Extract ALL citations from graph results to ensure completeness.
 
     Args:
         graph_results: Graph query results
@@ -284,8 +486,8 @@ def _extract_citations(graph_results: List[Dict], sections: List[Dict]) -> List[
     """
     citations = []
 
-    # Citations from graph results
-    for result in graph_results[:5]:
+    # Citations from graph results - include ALL results (no limit)
+    for result in graph_results:  # All results, not just [:5]
         if "requirement_id" in result:
             citations.append({
                 "type": "requirement",

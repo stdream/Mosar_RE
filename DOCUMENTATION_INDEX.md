@@ -23,7 +23,7 @@ This index provides a roadmap to all project documentation. Start here to find t
 
 ---
 
-## 📚 Core Documentation (9 files)
+## 📚 Core Documentation (11 files)
 
 ### 1. [README.md](README.md) (7.5 KB)
 **Purpose**: Project overview and entry point
@@ -192,6 +192,48 @@ This index provides a roadmap to all project documentation. Start here to find t
 
 ---
 
+### 10. [TEST_PLAN_V1.1.0_COMPREHENSIVE.md](TEST_PLAN_V1.1.0_COMPREHENSIVE.md) (83 KB)
+**Purpose**: Comprehensive test plan for v1.1.0 validation
+
+**Contains**:
+- 97 test cases across 7 categories
+- Database state verification procedures
+- Functional, integration, UI, performance tests
+- Regression and edge case testing
+- Automated test scripts
+- Test execution procedures
+- Entry/exit criteria
+- Risk mitigation strategies
+
+**Read this when**:
+- Planning comprehensive system testing
+- Validating new releases
+- Understanding test coverage
+- Writing new test cases
+- Debugging test failures
+
+**Note**: This is the definitive test plan based on actual database state verification. Supersedes TEST_PLAN_V1.1.0.md (basic version).
+
+---
+
+### 11. [tests/README.md](tests/README.md) (2 KB)
+**Purpose**: Guide to automated test scripts
+
+**Contains**:
+- Test script descriptions
+- Usage instructions
+- Test coverage details
+- Expected outputs
+- Troubleshooting
+
+**Read this when**:
+- Running automated tests
+- Interpreting test results
+- Adding new automated tests
+- Setting up CI/CD testing
+
+---
+
 ## 📖 Document Organization
 
 ### By Use Case
@@ -200,6 +242,7 @@ This index provides a roadmap to all project documentation. Start here to find t
 |----------|-----------------|---------------------|
 | **Getting Started** | [README.md](README.md) | [QUICKSTART.md](QUICKSTART.md) |
 | **Development** | [CLAUDE.md](CLAUDE.md) | [ARCHITECTURE.md](ARCHITECTURE.md), [PRD.md](PRD.md) |
+| **Testing** | [TEST_PLAN_V1.1.0_COMPREHENSIVE.md](TEST_PLAN_V1.1.0_COMPREHENSIVE.md) | [tests/README.md](tests/README.md), [TEST_REPORT_QUERY_PATH_FIX.md](TEST_REPORT_QUERY_PATH_FIX.md) |
 | **Deployment** | [DEPLOYMENT.md](DEPLOYMENT.md) | [QUICKSTART.md](QUICKSTART.md), [CHANGELOG.md](CHANGELOG.md) |
 | **Maintenance** | [DEPLOYMENT.md](DEPLOYMENT.md) | [CHANGELOG.md](CHANGELOG.md), [CLAUDE.md](CLAUDE.md) |
 | **Troubleshooting** | [CLAUDE.md](CLAUDE.md) | [DEPLOYMENT.md](DEPLOYMENT.md), [BUGFIX_QUERY_PATH_ROUTING.md](BUGFIX_QUERY_PATH_ROUTING.md) |
@@ -211,7 +254,7 @@ This index provides a roadmap to all project documentation. Start here to find t
 | **Product Manager** | [README.md](README.md) | [CHANGELOG.md](CHANGELOG.md), [PRD.md](PRD.md) |
 | **Developer** | [CLAUDE.md](CLAUDE.md) | [ARCHITECTURE.md](ARCHITECTURE.md), [QUICKSTART.md](QUICKSTART.md) |
 | **DevOps Engineer** | [DEPLOYMENT.md](DEPLOYMENT.md) | [ARCHITECTURE.md](ARCHITECTURE.md), [CHANGELOG.md](CHANGELOG.md) |
-| **QA Engineer** | [TEST_REPORT_QUERY_PATH_FIX.md](TEST_REPORT_QUERY_PATH_FIX.md) | [QUICKSTART.md](QUICKSTART.md), [CLAUDE.md](CLAUDE.md) |
+| **QA Engineer** | [TEST_PLAN_V1.1.0_COMPREHENSIVE.md](TEST_PLAN_V1.1.0_COMPREHENSIVE.md) | [tests/README.md](tests/README.md), [TEST_REPORT_QUERY_PATH_FIX.md](TEST_REPORT_QUERY_PATH_FIX.md) |
 | **End User** | [README.md](README.md) | [QUICKSTART.md](QUICKSTART.md) |
 
 ---
@@ -307,19 +350,29 @@ These are the original MOSAR technical documents that the system ingests:
 **Q: How do I troubleshoot Neo4j connection issues?**
 → [DEPLOYMENT.md](DEPLOYMENT.md) → Troubleshooting → Neo4j Connection Failed
 
+**Q: How do I run automated tests?**
+→ [tests/README.md](tests/README.md) → Test Scripts
+
+**Q: What is the comprehensive test coverage?**
+→ [TEST_PLAN_V1.1.0_COMPREHENSIVE.md](TEST_PLAN_V1.1.0_COMPREHENSIVE.md) → 97 test cases
+
+**Q: How do I verify database state before testing?**
+→ [tests/README.md](tests/README.md) → Database State Verification
+
 ---
 
 ## 📊 Documentation Statistics
 
 | Metric | Value |
 |--------|-------|
-| **Total Markdown Files** | 9 core + 4 source docs |
-| **Total Documentation Size** | ~180 KB |
-| **Average Document Length** | 20 KB |
-| **Most Comprehensive** | [PRD.md](PRD.md) (55 KB) |
+| **Total Markdown Files** | 11 core + 4 source docs + 3 test scripts |
+| **Total Documentation Size** | ~265 KB |
+| **Average Document Length** | 24 KB |
+| **Most Comprehensive** | [TEST_PLAN_V1.1.0_COMPREHENSIVE.md](TEST_PLAN_V1.1.0_COMPREHENSIVE.md) (83 KB) |
 | **Most Technical** | [ARCHITECTURE.md](ARCHITECTURE.md) (31 KB) |
-| **Most Recent** | [BUGFIX_QUERY_PATH_ROUTING.md](BUGFIX_QUERY_PATH_ROUTING.md) (2025-10-30) |
+| **Most Recent** | [TEST_PLAN_V1.1.0_COMPREHENSIVE.md](TEST_PLAN_V1.1.0_COMPREHENSIVE.md) (2025-10-30) |
 | **Last Major Cleanup** | 2025-10-30 (removed 14 intermediate docs) |
+| **Test Coverage** | 97 test cases across 7 categories |
 
 ---
 

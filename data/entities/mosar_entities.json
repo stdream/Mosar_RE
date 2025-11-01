@@ -16,7 +16,13 @@
     "Service Module": {"id": "SM", "type": "SpacecraftModule"},
     "워킹 매니퓰레이터": {"id": "WM", "type": "Component"},
     "감소형 장비 제어 유닛": {"id": "R-ICU", "type": "Component"},
-    "서비스 모듈": {"id": "SM", "type": "SpacecraftModule"}
+    "서비스 모듈": {"id": "SM", "type": "SpacecraftModule"},
+    "온보드 컴퓨터": {"id": "OBC-S", "type": "Component"},
+    "온보드 컴퓨터 서버": {"id": "OBC-S", "type": "Component"},
+    "온보드 컴퓨터 클라이언트": {"id": "OBC-C", "type": "Component"},
+    "전력 분배 유닛": {"id": "cPDU", "type": "Component"},
+    "핫독": {"id": "HOTDOCK", "type": "Component"},
+    "도킹 인터페이스": {"id": "HOTDOCK", "type": "Component"}
   },
 
   "requirements": {
@@ -57,6 +63,10 @@
     "RMAP": {"id": "RMAP", "type": "Protocol"},
     "CAN": {"id": "CAN", "type": "Protocol"},
     "CAN bus": {"id": "CAN", "type": "Protocol"},
-    "Ethernet": {"id": "Ethernet", "type": "Protocol"}
+    "Ethernet": {"id": "Ethernet", "type": "Protocol"},
+    "이더넷": {"id": "Ethernet", "type": "Protocol"},
+    "스페이스와이어": {"id": "SpaceWire", "type": "Protocol"},
+    "캔 버스": {"id": "CAN", "type": "Protocol"},
+    "캔": {"id": "CAN", "type": "Protocol"}
   }
 }
